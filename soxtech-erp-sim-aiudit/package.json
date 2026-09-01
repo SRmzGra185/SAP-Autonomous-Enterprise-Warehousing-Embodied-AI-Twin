@@ -1,0 +1,16 @@
+{
+  "name": "sap-embodied-ai-simulation-lab",
+  "version": "0.5.0",
+  "private": true,
+  "description": "SAP Autonomous Enterprise embodied-AI simulation and governed robot-orchestration workbench.",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node --watch server.mjs",
+    "start:env": "node --env-file=.env server.mjs",
+    "test": "node test/robotics-smoke.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

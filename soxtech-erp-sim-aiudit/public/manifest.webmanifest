@@ -1,0 +1,9 @@
+{
+  "name": "SAP Embodied AI Simulation Lab",
+  "short_name": "Embodied AI Lab",
+  "description": "A tenant-safe SAP-to-robot orchestration and discrete-event simulation workbench.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#eef5f8",
+  "theme_color": "#31506a"
+}

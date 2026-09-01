@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#eaf1f4" />
+    <title>SAP Embodied AI Simulation Lab</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand-copy"><strong>SAP AUTONOMOUS ENTERPRISE</strong><span>Embodied AI Simulation Lab</span></div>
+      <nav class="top-actions" aria-label="Application menu">
+        <button data-command="new">New Model</button><button data-command="open">Open</button><button data-command="load">Load Example</button><button data-command="getting-started">Getting Started</button><a href="https://github.com/SRmzGra185" target="_blank" rel="noreferrer">GitHub ↗</a>
+      </nav>
+      <span class="identity-pill" id="identity-pill">desktop · loading</span>
+      <button class="mode-toggle active" id="edit-toggle"><span></span> EDIT MODE</button>
+      <div class="safety-pill"><span></span> MOCK / SAFE RUNTIME</div>
+    </header>
+
+    <main class="app-shell">
+      <section class="ribbon">
+        <div class="ribbon-tabs" role="tablist"><button class="active" data-ribbon="model">Model</button><button data-ribbon="simulate">Simulate</button><button data-ribbon="integrate">Integrate</button><button data-ribbon="audit">Governance</button><button data-ribbon="agent">Joule Agents</button><button data-ribbon="robot">Embodied AI Lab</button></div>
+        <div class="ribbon-tools" id="ribbon-tools"></div>
+      </section>
+
+      <section class="workspace-grid">
+        <aside class="library-panel panel">
+          <div class="panel-heading"><div><span class="eyebrow">SAP SOLUTION LANDSCAPE</span><h2>Process & Asset Palette</h2></div><button class="icon-button" aria-label="Palette options">⋮</button></div>
+          <label class="search"><span>⌕</span><input id="palette-search" placeholder="Find object" /></label>
+          <div class="library-list" id="library-list">
+            <button class="library-item" data-tool="source"><span class="object-icon source"><span class="icon-model warehouse"></span></span><span><strong>SAP LoB Source</strong><small>S/4HANA · EWM · Digital Manufacturing</small></span><em>⌘1</em></button>
+            <button class="library-item" data-tool="process"><span class="object-icon process"><span class="icon-model tower"></span></span><span><strong>SAP Business Data Cloud</strong><small>BDC Cockpit · Datasphere · BW PCE</small></span><em>⌘2</em></button>
+            <button class="library-item" data-tool="data"><span class="object-icon data"><span class="icon-model crate"></span></span><span><strong>SAP Data Product</strong><small>Business context for physical execution</small></span><em>⌘3</em></button>
+            <button class="library-item" data-tool="audit"><span class="object-icon audit"><span class="icon-model gate"></span></span><span><strong>Governance</strong><small>Control · evidence · accountability</small></span><em>⌘4</em></button>
+            <button class="library-item" data-tool="gate"><span class="object-icon gate"><span class="icon-model gate"></span></span><span><strong>Human Approval Gate</strong><small>Physical-action checkpoint</small></span><em>⌘5</em></button>
+            <button class="library-item" data-tool="agent"><span class="object-icon agent"><span class="icon-model robot"></span></span><span><strong>Joule Agent</strong><small>Plan · dispatch · supervise</small></span><em>⌘6</em></button>
+          </div>
+          <div class="library-note"><strong>Select an object</strong><span>Open its rendered environment, cockpit tools, capacity, service time, and operational role.</span></div>
+        </aside>
+
+        <section class="model-panel panel">
+          <div class="model-header">
+            <div><span class="eyebrow">SAP PROCESS → AGENT → PHYSICAL EXECUTION</span><h1 id="model-name">SAP Autonomous Enterprise · Embodied AI Campus</h1><div class="model-meta"><span class="status-dot"></span><span id="model-status">Ready for experiment</span><span class="separator">·</span><span id="model-version">v0.4.0-platform</span></div></div>
+            <div class="view-switch"><button class="active" data-view="2d">2D Model</button><button data-view="3d">3D Twin</button></div>
+          </div>
+          <div class="canvas-toolbar"><div class="crumbs"><span>Root</span><b>›</b><span>SAP Business Data Cloud</span><b>›</b><strong>Connected Physical Operations</strong></div><div class="zoom-controls"><button data-zoom="out">−</button><span id="zoom-label">100%</span><button data-zoom="in">＋</button><button data-zoom="fit">⌗</button></div></div>
+          <div class="model-stage">
+            <svg id="model-canvas" viewBox="0 0 1100 650" role="img" aria-label="2D discrete event model"></svg>
+            <div id="scene-3d" class="scene-3d hidden"><canvas id="webgl-world" aria-label="Rendered 3D Industry 4.0 environment"></canvas><div class="camera-label">DRAG TO ORBIT · WHEEL TO ZOOM</div><div class="scene-zone-labels hidden" id="scene-zone-labels"></div><div class="flow-legend"><span class="flow-blue"></span>work entity <span class="flow-green"></span>worker pool <span class="flow-purple"></span>data package</div></div>
+
+            <aside class="object-submenu hidden" id="object-submenu" aria-live="polite"><div class="submenu-heading"><div><span class="eyebrow">OBJECT DEEP DIVE</span><h3 id="submenu-title">Object</h3></div><button id="submenu-close" class="icon-button">×</button></div><div class="submenu-world" id="submenu-world"><canvas id="deep-dive-canvas" aria-label="Rendered object deep dive environment"></canvas></div><p id="submenu-description" class="submenu-description"></p><div class="submenu-stats"><span><small>CAPACITY</small><strong id="submenu-capacity">—</strong></span><span><small>SERVICE</small><strong id="submenu-service">—</strong></span><span><small>PLANE</small><strong>3D MESH</strong></span></div><div class="submenu-actions"><button id="submenu-place" class="primary-button">Place on plane</button><button id="submenu-inspect" class="secondary-button">Inspect</button></div></aside>
+
+            <section class="interior-dive hidden" id="interior-dive" aria-live="polite">
+              <header class="interior-header"><div><span class="eyebrow">DEEP-DIVE ENVIRONMENT</span><h2 id="interior-title">Object Interior</h2><p id="interior-type">Rendered polygonal workspace</p></div><div class="interior-header-actions"><span class="mesh-badge">WEBGL MESH</span><button id="interior-back" class="secondary-button">↩ Back to model</button></div></header>
+              <div class="interior-grid"><div class="interior-viewport"><canvas id="interior-canvas" aria-label="Rendered object interior environment"></canvas><div class="interior-camera-note">DRAG TO ORBIT · WHEEL TO ZOOM</div></div><section class="interior-interface"><div class="interface-summary"><strong id="interior-system">Object cockpit</strong><span id="interior-description">Interface modules and operating context.</span></div><div class="interior-stats"><span><small>CAPACITY</small><b id="interior-capacity">—</b></span><span><small>SERVICE</small><b id="interior-service">—</b></span><span><small>ROLE</small><b id="interior-role">—</b></span></div><nav class="interface-tabs" id="interface-tabs"></nav><div class="interface-workspace" id="interface-workspace"></div><div class="interior-actions"><button id="interior-place" class="primary-button">Place in model</button><button id="interior-close" class="secondary-button">Close environment</button></div></section></div>
+            </section>
+            <div class="stage-hint"><span class="pulse"></span><span id="stage-hint-text">Drag nodes to rearrange · click an object to inspect it</span></div>
+          </div>
+          <div class="timeline-bar"><div class="timeline-label"><span class="live-dot"></span><strong>Event stream</strong><span id="event-count">0 events</span></div><div class="timeline-track"><span id="timeline-fill"></span></div><span id="clock-label">t = 0.00</span></div>
+        </section>
+
+        <aside class="inspector-panel panel"><div class="panel-heading"><div><span class="eyebrow">INSPECTOR</span><h2 id="inspector-title">Model Health</h2></div><button class="icon-button" aria-label="Inspector options">⋮</button></div><div id="inspector-content" class="inspector-content"></div></aside>
+      </section>
+
+      <section class="lower-grid">
+        <div class="metrics-panel panel"><div class="panel-heading"><div><span class="eyebrow">EXPERIMENT TELEMETRY</span><h2>DES Essentials</h2></div><span class="live-badge">LIVE</span></div><div class="metric-cards"><div class="metric-card"><span>Throughput</span><strong id="metric-throughput">—</strong><small>entities / time</small></div><div class="metric-card"><span>Avg cycle</span><strong id="metric-cycle">—</strong><small>time units</small></div><div class="metric-card"><span>P95 cycle</span><strong id="metric-p95">—</strong><small>time units</small></div><div class="metric-card accent"><span>Governance exceptions</span><strong id="metric-breaches">—</strong><small>sampled controls</small></div></div><div class="experiment-controls"><select id="simulation-mode"><option value="fast">Fast DES</option><option value="realtime">Real-time DES</option><option value="monte-carlo">Monte Carlo × 5</option></select><label>Orders <input id="entity-count" type="number" min="8" max="80" value="24" /></label><button id="run-simulation" class="primary-button">▶ Run experiment</button></div></div>
+        <div class="console-panel panel"><div class="panel-heading"><div><span class="eyebrow">JOULE ORCHESTRATION / EVENT LOG</span><h2>Agent and robot trace</h2></div><span class="route-badge">SOL 5.6 XHIGH → GPT-5.5 PRO</span></div><div class="agent-command"><input id="agent-goal" maxlength="2000" placeholder="Describe a bounded business outcome for Joule to orchestrate" /><button id="run-agent-task" class="primary-button">Delegate</button></div><div class="console-log" id="console-log"><div class="console-line muted"><span>00:00:00</span><strong>system</strong><p>Safe tenant-scoped runtime initialized.</p></div></div></div>
+      </section>
+
+      <section class="robot-lab panel" id="robot-lab">
+        <div class="panel-heading robot-lab-heading"><div><span class="eyebrow">SAP EMBODIED AI / SIM-TO-REAL</span><h2>Human · Joule · Robot Orchestration Lab</h2><p>Turn SAP business intent into governed, executable GRAFCET routines for sensors, devices, machines, and robots.</p></div><span class="safety-copy">Simulation → Shadow → Assisted → Live locked</span></div>
+        <div class="robot-scenario-tabs" id="robot-scenario-tabs"></div>
+        <div class="robot-lab-grid">
+          <section class="grafcet-workspace">
+            <div class="robot-section-heading"><div><span class="eyebrow">SEQUENTIAL FUNCTION CHART</span><strong id="grafcet-title">Select a robot scenario</strong></div><span class="grafcet-state" id="grafcet-state">S0</span></div>
+            <svg id="grafcet-diagram" viewBox="0 0 1000 210" role="img" aria-label="Interactive GRAFCET robot routine"></svg>
+            <div class="grafcet-detail" id="grafcet-detail"><strong>Active step</strong><span>Load a scenario to inspect actions and transition receptivities.</span></div>
+            <div class="robot-controls">
+              <label>Execution mode<select id="robot-mode"><option value="simulation">Simulation</option><option value="shadow">Shadow — real sensors, no commands</option><option value="assisted">Assisted — approval required</option><option value="live">Live — locked by Safety Gate</option></select></label>
+              <label>Cycles<input id="robot-cycles" type="number" min="1" max="20" value="1" /></label>
+              <label>Speed<select id="robot-speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
+              <button id="load-robot-cell" class="secondary-button">Connect to SAP campus</button>
+              <button id="step-robot-routine" class="secondary-button">Next step</button>
+              <button id="run-robot-routine" class="primary-button">Run routine</button>
+            </div>
+          </section>
+          <aside class="routine-implementation">
+            <div class="robot-section-heading"><div><span class="eyebrow">IMPLEMENTATION CONTRACT</span><strong id="routine-title">Robot routine</strong></div><span class="mesh-badge">PROGRAMMABLE</span></div>
+            <div class="routine-tabs"><button class="active" data-routine-tab="code">Routine code</button><button data-routine-tab="bindings">I/O bindings</button><button data-routine-tab="walkthrough">Commissioning</button></div>
+            <div id="routine-code-panel" class="routine-panel"><pre id="routine-code"></pre></div>
+            <div id="routine-bindings-panel" class="routine-panel hidden"><div id="routine-bindings"></div></div>
+            <div id="routine-walkthrough-panel" class="routine-panel hidden"><ol class="commissioning-list"><li><b>Bind</b><span>Map simulated tags to sensor, PLC, robot, and ERP interfaces.</span></li><li><b>Teach</b><span>Define frames, tool center point, poses, speed, and safe zones.</span></li><li><b>Validate</b><span>Check every GRAFCET receptivity with recorded or synthetic signals.</span></li><li><b>Simulate</b><span>Run deterministic and Monte Carlo cycles without physical commands.</span></li><li><b>Shadow</b><span>Read real devices while commands remain inside the digital twin.</span></li><li><b>Assist</b><span>Require a human approval before each command group.</span></li><li><b>Release</b><span>Live mode remains locked until device identity, risk review, and change ticket pass.</span></li></ol></div>
+            <div class="robot-live-strip"><span>Sensor</span><strong id="robot-sensor">waiting</strong><span>Command</span><strong id="robot-command">waiting</strong></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="integration-panel panel"><div class="panel-heading"><div><span class="eyebrow">SAP BTP / OPEN SYSTEM ARCHITECTURE</span><h2>Integration and event runway</h2></div><span class="safety-copy">Read-only allows queries and exploration. It blocks mutations and production routes.</span></div><div class="hana-lenses" id="hana-lenses"><div class="lens-heading"><span class="eyebrow">SAP HANA CLOUD DATA ENGINES</span><strong>Vector · Spatial · Property Graph · Knowledge Graph · JSON</strong></div></div><div class="adapter-grid" id="adapter-grid"></div></section>
+    </main>
+
+    <section class="lens-workbench hidden" id="lens-workbench" aria-live="polite">
+      <header class="lens-workbench-header"><div><span class="eyebrow">SAP HANA CLOUD WORKBENCH</span><h2 id="lens-title">Vector</h2><p id="lens-description">Read-only analytical workspace.</p></div><div><span class="read-only-badge">QUERY-ONLY RLS</span><button id="lens-close" class="secondary-button">Close</button></div></header>
+      <div class="lens-workbench-grid"><div class="lens-viewport"><canvas id="lens-canvas" aria-label="Rendered data lens environment"></canvas><div class="lens-orbit-note">DRAG TO ORBIT · WHEEL TO ZOOM</div></div><section class="lens-console"><div class="lens-stat-row"><span><small>ENGINE</small><strong id="lens-engine">—</strong></span><span><small>SCOPE</small><strong id="lens-scope">CURRENT TENANT</strong></span><span><small>MODE</small><strong>READ ONLY</strong></span></div><label class="lens-query-label">Query or exploration prompt<textarea id="lens-query" maxlength="500" rows="5"></textarea></label><div class="lens-actions"><button id="lens-run" class="primary-button">Run background query</button><button id="lens-example" class="secondary-button">Load example</button></div><div id="lens-results" class="lens-results"><p>Select a lens and run a query to inspect its mock execution result.</p></div></section></div>
+    </section>
+
+    <section class="guide-panel hidden" id="guide-panel" aria-modal="true" role="dialog" aria-labelledby="guide-title">
+      <header><div><span class="eyebrow">GETTING STARTED</span><h2 id="guide-title">Run a SAP-to-robot process step by step</h2></div><button id="guide-close" class="secondary-button">Close</button></header>
+      <ol>
+        <li><strong>1. Load the SAP EWM example.</strong><span>Load Example opens the complete Order-to-Dispatch model: SAP context, Joule orchestration, AMRs, picking, conveyor, verification, and goods issue.</span></li>
+        <li><strong>2. Enter the 3D Twin.</strong><span>Switch to 3D Twin and orbit the connected SAP and physical zones. Click any mesh to open its cockpit or implementation environment.</span></li>
+        <li><strong>3. Inspect business context.</strong><span>Open SAP LoB Source, SAP BDC Cockpit, and SAP Data Product to inspect orders, SQL, PAL HGBT, graphs, contracts, and lineage.</span></li>
+        <li><strong>4. Direct the outcome with Joule.</strong><span>Open Joule Agents, enter a bounded warehouse outcome, and delegate. The trace separates assistant intent, domain reasoning, robot skill, and governance review.</span></li>
+        <li><strong>5. Program the physical routine.</strong><span>In Embodied AI Lab select SAP EWM Multi-Robot Order Fulfillment. Inspect GRAFCET, I/O bindings, routine code, and commissioning steps.</span></li>
+        <li><strong>6. Simulate before commanding.</strong><span>Run the routine in Simulation, advance individual GRAFCET steps, then compare Fast DES, Real-time, and Monte Carlo metrics.</span></li>
+        <li><strong>7. Validate integrations.</strong><span>Use the SAP BTP runway to dry-run OData, REST, MQTT, OPC UA, ROS-adjacent, database, socket, and file adapters without production writes.</span></li>
+        <li><strong>8. Test governance.</strong><span>Open Governance and Human Approval Gate. Shadow may read signals; assisted mode requires approval; live robot commands remain locked.</span></li>
+        <li><strong>9. Close the loop.</strong><span>Inspect SAP HANA Cloud data engines, review evidence, and save a reproducible snapshot containing business, agent, robot, and policy traces.</span></li>
+      </ol>
+      <div class="guide-note"><strong>Safety rule</strong><span>Read-only is not inactive: inspect, query, simulate, and dry-run tests are enabled. Mutation and production routes remain denied.</span></div>
+    </section>
+
+    <section class="example-runbook hidden" id="example-runbook" aria-modal="true" role="dialog" aria-labelledby="example-runbook-title">
+      <header><div><span class="eyebrow">SAP EWM / ORDER-TO-DISPATCH</span><h2 id="example-runbook-title">Orchestrate an order from business intent to robot confirmation</h2><p id="example-runbook-summary">A governed challenge demo connecting SAP EWM, Joule, SAP Business Data Cloud, AMRs, a picking cell, and human approval.</p></div><button id="example-runbook-close" class="secondary-button">Close</button></header>
+      <div class="runbook-status"><span class="status-dot"></span><strong id="runbook-status-text">Example loaded and saved to the current tenant snapshot.</strong></div>
+      <div class="runbook-steps" id="runbook-steps"></div>
+      <div class="guide-note"><strong>Expected result</strong><span>Use each action below in order. Every step opens the relevant cockpit or queues a safe background operation; production writes remain denied.</span></div>
+    </section>
+
+    <div class="toast" id="toast" role="status"></div>
+    <script type="module" src="/app.js?v=0.4.0"></script>
+  </body>
+</html>
