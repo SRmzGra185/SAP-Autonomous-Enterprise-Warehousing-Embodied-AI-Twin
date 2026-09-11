@@ -282,7 +282,9 @@ export async function runRobotRoutine(scenario, input, emit, controls = {}) {
     const timer = setTimeout(() => { controls.signal?.removeEventListener("abort", abort); resolve(); }, ms);
     controls.signal?.addEventListener("abort", abort, { once: true });
   });
-  const duration = (units = 1) => Math.round(units * 1800 / input.speed);
+  // Keep each simulated action visible in the twin without making smoke tests
+  // wait on a full wall-clock production cycle.
+  const duration = (units = 1) => Math.round(units * 1100 / input.speed);
   const transfer = async (fromNodeId, toNodeId, label, durationMs = duration()) => {
     await emit({ type: "routine_transfer", scenarioId: scenario.id, fromNodeId, toNodeId, nodeId: toNodeId, label, durationMs, simulated: true });
     await wait(durationMs);

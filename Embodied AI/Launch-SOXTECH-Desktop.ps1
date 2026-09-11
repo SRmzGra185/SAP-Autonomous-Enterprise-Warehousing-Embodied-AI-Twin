@@ -9,6 +9,20 @@ $ServerErrorLog = Join-Path $RuntimeDirectory "server.stderr.log"
 $PidFile = Join-Path $Project ".soxtech-server.pid"
 $EnvFile = Join-Path $Project ".env"
 $Port = 4173
+$ServerScript = Join-Path $Project "server.mjs"
+
+# Resolve from the launcher location so a GitHub download can add a wrapper
+# directory without breaking the start command.
+if (-not (Test-Path -LiteralPath $ServerScript -PathType Leaf)) {
+  $Candidates = @(Get-ChildItem -LiteralPath $Project -Filter "server.mjs" -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -notmatch "\\node_modules\\|\\.runtime\\" } | Select-Object -First 5)
+  if ($Candidates.Count -eq 1) { $ServerScript = $Candidates[0].FullName }
+}
+if (-not (Test-Path -LiteralPath $ServerScript -PathType Leaf)) {
+  throw "server.mjs was not found next to the launcher. Copy the complete app folder from GitHub, including server.mjs, public, src, and package.json. Launcher folder: $Project"
+}
+$ServerDirectory = Split-Path -Parent $ServerScript
+$ServerFileName = Split-Path -Leaf $ServerScript
+$ServerEnvFile = Join-Path $ServerDirectory ".env"
 
 # Some desktop shells expose both PATH and Path. Windows treats them as the
 # same variable, but PowerShell cannot start a child process until normalized.
@@ -69,8 +83,9 @@ function Open-DesktopWindow([string]$Url) {
 try {
   Write-LaunchLog "Launch requested."
 
-  if (Test-Path $EnvFile) {
-    $PortLine = Get-Content $EnvFile | Where-Object { $_ -match '^\s*PORT\s*=\s*\d+\s*$' } | Select-Object -First 1
+  $PortConfig = if (Test-Path -LiteralPath $EnvFile) { $EnvFile } elseif (Test-Path -LiteralPath $ServerEnvFile) { $ServerEnvFile } else { $null }
+  if ($PortConfig) {
+    $PortLine = Get-Content -LiteralPath $PortConfig | Where-Object { $_ -match '^\s*PORT\s*=\s*\d+\s*$' } | Select-Object -First 1
     if ($PortLine) { $Port = [int](($PortLine -split '=', 2)[1].Trim()) }
   }
 
@@ -90,8 +105,8 @@ try {
     if ($NodeMajor -lt 20) { throw "Node.js 20 or newer is required; found version $NodeMajor at $Node." }
 
     Remove-Item -LiteralPath $ServerOutputLog,$ServerErrorLog -Force -ErrorAction SilentlyContinue
-    $Arguments = if (Test-Path $EnvFile) { @("--env-file=$EnvFile", "server.mjs") } else { @("server.mjs") }
-    $Process = Start-Process -FilePath $Node -ArgumentList $Arguments -WorkingDirectory $Project -WindowStyle Hidden -RedirectStandardOutput $ServerOutputLog -RedirectStandardError $ServerErrorLog -PassThru
+    $Arguments = if ($PortConfig) { @("--env-file=$PortConfig", $ServerFileName) } else { @($ServerFileName) }
+    $Process = Start-Process -FilePath $Node -ArgumentList $Arguments -WorkingDirectory $ServerDirectory -WindowStyle Hidden -RedirectStandardOutput $ServerOutputLog -RedirectStandardError $ServerErrorLog -PassThru
     Set-Content -LiteralPath $PidFile -Value $Process.Id
     Write-LaunchLog "Started API process $($Process.Id) with $Node on port $Port."
 

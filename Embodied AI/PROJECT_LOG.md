@@ -262,3 +262,12 @@
 - Switching to Inspection retained 21 objects, kept Business Data Cockpit and Semantic Data Fabric, removed the Assembly cobot, and added the Inspection robot.
 - Fixed reload-state binding so Robot Lab restores the model's saved `activeScenarioId`; the rendered workcell and executable GRAFCET can no longer silently select different domains.
 - Visual inspection confirmed both districts land on the expanded plane; browser diagnostics contained no warnings or errors.
+## 2026-09-10 — Portable GitHub launcher and Assisted verification
+
+- Diagnosed the external-computer failure: the launcher assumed `server.mjs` was in its working directory, so a GitHub wrapper/nested folder produced `MODULE_NOT_FOUND` and then the misleading “API did not become ready” message.
+- Updated `Launch-SOXTECH-Desktop.ps1` to resolve `server.mjs` relative to the launcher, support one nested app folder, use the server directory as the process working directory, and report a precise missing-package message.
+- Added `GITHUB-PORTABLE-SETUP.md` with the required package layout and external-computer launch instructions.
+- Removed only the generated `.runtime\desktop-browser-profile` (481.96 MB) after confirming the disk was full; no source code or user data was removed.
+- Evidence: `npm test` passed: `14 platform + 7 robot objects, 8 GRAFCET steps, live route denied`.
+- Evidence: local launcher test with `-NoOpen` returned API health `ok: true`, app `SAP Embodied AI Simulation Lab`, version `0.5.0-embodied-ai`.
+- Evidence: Assisted routine reached `awaiting_approval` at `S0`, continued to `S1` only after approval, then stopped after explicit rejection. No production command was dispatched.
