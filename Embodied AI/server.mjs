@@ -4,7 +4,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { adapters } from "./src/adapters.mjs";
-import { defaultModel, hanaCapabilities } from "./src/domain.mjs";
+import { defaultModel, operationsScope, MODEL_VERSION } from "./src/domain.mjs";
 import { runSimulation } from "./src/engine.mjs";
 import { auditEntry, policy, safeConnectionRequest } from "./src/safety.mjs";
 import { config, assertSecureConfiguration, publicConfig } from "./config.mjs";
@@ -12,16 +12,19 @@ import { authenticate } from "./auth.mjs";
 import { HttpError, applyHeaders, assertAllowedOrigin, createRateLimiter, rateKey, readJson } from "./http-utils.mjs";
 import { applyModelWrite, assertTenantResource, canEdit, scopeModel, seedTenantModel } from "./row-policy.mjs";
 import { validateAgentTask, validateConnectionInput, validateModelInput, validateRobotRoutineInput, validateSimulationInput } from "./validation.mjs";
-import { runAgentTask, runtimeDescriptor } from "./orchestrator.mjs";
+import { runOperationsPlan, operationsRuntimeDescriptor } from "./src/operations-runtime.mjs";
+import { sapConnectionDescriptor, validateSapProfile, dryRunSapConnection } from "./src/sap-connections.mjs";
 import { composeRobotTwin, robotScenarios, robotScenarioById, robotScenarioIds, runRobotRoutine } from "./src/robotics.mjs";
 import { createApprovalGate } from "./src/approvals.mjs";
+import { describeExceptionControls, validateResolutionProof } from "./src/exception-resolution.mjs";
+import { experimentTemplate, validateExperimentProfile } from "./src/industrial-timing.mjs";
 
 assertSecureConfiguration();
 const __dirname = path.dirname(fileURLToPath(import.meta.url)), publicDir = path.join(__dirname, "public");
-const jobs = new Map(), tenantModels = new Map(), auditTrail = [auditEntry("server_started", { result: "desktop-safe", productionWrites: false })];
-const limit = createRateLimiter(config.rateLimit), adapterIds = adapters.map((adapter) => adapter.id), lensIds = new Set(hanaCapabilities.map((lens) => lens.id));
-const runtime = runtimeDescriptor(config);
-const challengeScenario = robotScenarioById("warehouse-fulfillment");
+const jobs = new Map(), tenantModels = new Map(), tenantProfiles = new Map(), auditTrail = [auditEntry("server_started", { result: "desktop-safe", productionWrites: false })];
+const limit = createRateLimiter(config.rateLimit), adapterIds = adapters.map((adapter) => adapter.id);
+const runtime = operationsRuntimeDescriptor(config);
+const challengeScenario = robotScenarioById("autonomous-inspection");
 const challengeModel = composeRobotTwin(defaultModel, defaultModel, challengeScenario);
 
 function json(res, status, payload, origin = null, rate = null) {
@@ -83,37 +86,45 @@ function handleEvents(req, res, job, origin) {
   job.clients.add(res); req.on("close", () => job.clients.delete(res));
 }
 
-const lensData = {
-  vector: { engine: "Vector similarity", rows: [["PRESS-03", "0.914", "bearing vibration"], ["LINE-07", "0.781", "thermal drift"], ["ROBOT-12", "0.643", "axis torque"]] },
-  spatial: { engine: "Spatial proximity", rows: [["PRESS-03", "12.4 m", "MX-01"], ["LINE-07", "31.8 m", "MX-01"], ["ROBOT-12", "44.1 m", "MX-02"]] },
-  "property-graph": { engine: "Property graph traversal", rows: [["ASSET", "WORK_ORDER", "hasOrder"], ["WORK_ORDER", "LOT", "affects"], ["LOT", "CONTROL", "requires"]] },
-  "knowledge-graph": { engine: "Knowledge graph semantics", rows: [["Press", "isA", "ProductionAsset"], ["OEE", "measures", "Availability"], ["Control", "governs", "DataProduct"]] },
-  json: { engine: "JSON document query", rows: [["LINE-07", "temperature", "72.4"], ["PRESS-03", "vibration", "4.8"], ["ROBOT-12", "torque", "18.1"]] }
-};
-
-async function runLensQuery(input, emit) {
-  if (!lensIds.has(input.lens)) throw new HttpError(400, "Unknown data lens.", "validation_error");
-  if (typeof input.query !== "string" || input.query.length > 500 || /[<>\u0000-\u001f]/.test(input.query)) throw new HttpError(400, "Lens query is invalid.", "validation_error");
-  await emit({ type: "lens_query_started", lens: input.lens, readOnly: true });
-  await new Promise((resolve) => setTimeout(resolve, 80));
-  const result = lensData[input.lens];
-  await emit({ type: "lens_query_complete", lens: input.lens, rows: result.rows.length });
-  return { ...result, lens: input.lens, query: input.query, readOnly: true, executedAt: new Date().toISOString() };
-}
-
 async function routeRequest(req, res) {
   const origin = assertAllowedOrigin(req, config), url = new URL(req.url, `http://${req.headers.host || "localhost"}`), pathname = url.pathname;
   if (req.method === "OPTIONS") { applyHeaders(res, origin); res.writeHead(204); return res.end(); }
-  if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok: true, app: "SAP Embodied AI Simulation Lab", version: "0.5.0-embodied-ai", authMode: config.auth.mode }, origin);
+  if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok: true, app: operationsScope.name, version: MODEL_VERSION, authMode: config.auth.mode }, origin);
   if (req.method === "GET" && pathname === "/api/config") return json(res, 200, publicConfig(), origin);
 
   if (pathname.startsWith("/api/")) {
-    const principal = await authenticate(req, config), agentRoute = pathname === "/api/agent/tasks", rate = limit(rateKey(req, principal), agentRoute ? config.rateLimit.agentMax : config.rateLimit.max);
+    const principal = await authenticate(req, config), agentRoute = pathname === "/api/agent/tasks", rate = limit(`${rateKey(req, principal)}:${agentRoute ? "agent" : "api"}`, agentRoute ? config.rateLimit.agentMax : config.rateLimit.max);
     if (req.method === "GET" && pathname === "/api/session") return json(res, 200, { ...principal, permissions: { editModel: canEdit(principal), approve: principal.roles.some((role) => ["admin", "approver"].includes(role)), productionWrite: false } }, origin, rate);
     if (req.method === "GET" && pathname === "/api/model") return json(res, 200, scopeModel(tenantModel(principal), principal), origin, rate);
     if (req.method === "GET" && pathname === "/api/model/example") return json(res, 200, scopeModel(seedTenantModel(challengeModel, principal), principal), origin, rate);
     if (req.method === "GET" && pathname === "/api/adapters") return json(res, 200, adapters, origin, rate);
-    if (req.method === "GET" && pathname === "/api/hana-capabilities") return json(res, 200, hanaCapabilities, origin, rate);
+    if (req.method === "GET" && pathname === "/api/operations-scope") return json(res, 200, operationsScope, origin, rate);
+    if (req.method === "GET" && pathname === "/api/exception-controls") return json(res, 200, describeExceptionControls(), origin, rate);
+    if (req.method === "GET" && pathname === "/api/experiment-template") return json(res, 200, experimentTemplate(scopeModel(tenantModel(principal), principal)), origin, rate);
+    if (["/api/hana-capabilities", "/api/lenses/query"].includes(pathname)) throw new HttpError(410, "Standalone HANA tools were retired. Use BDC Connect and Joule operations workspaces.", "scope_retired");
+    if (req.method === "GET" && pathname === "/api/sap-connections") return json(res, 200, {
+      descriptor: sapConnectionDescriptor(), profiles: [...(tenantProfiles.get(principal.tenantId)?.values() || [])], storage: "tenant memory; session-only"
+    }, origin, rate);
+    if (req.method === "PUT" && pathname === "/api/sap-connections") {
+      if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
+      const result = validateSapProfile(await readJson(req, config));
+      if (!result.valid) return json(res, 400, { ...result, error: "Connection metadata is invalid." }, origin, rate);
+      if (!["BDC_CONNECT", "JOULE"].includes(result.profile.role)) throw new HttpError(400, "Choose BDC_CONNECT or JOULE.", "validation_error");
+      if (!tenantProfiles.has(principal.tenantId)) tenantProfiles.set(principal.tenantId, new Map());
+      tenantProfiles.get(principal.tenantId).set(result.profile.role, result.profile);
+      record("connection_draft_saved", { role: result.profile.role, complete: result.complete, connected: false }, principal);
+      return json(res, 200, { ...result, storage: "tenant memory; session-only", connected: false }, origin, rate);
+    }
+    if (req.method === "POST" && pathname === "/api/sap-connections/check") {
+      const result = validateSapProfile(await readJson(req, config));
+      if (!result.valid) return json(res, 400, { ...result, error: "Connection metadata is invalid." }, origin, rate);
+      const job = launchJob("connection_metadata_check", principal, async (emit) => {
+        const check = dryRunSapConnection(result.profile);
+        await emit({ type: "connection_metadata_checked", connected: false, status: check.status });
+        return check;
+      });
+      return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
+    }
     if (req.method === "GET" && pathname === "/api/runtime") return json(res, 200, runtime, origin, rate);
     if (req.method === "GET" && pathname === "/api/robot-scenarios") return json(res, 200, robotScenarios, origin, rate);
     const robotComposeMatch = pathname.match(/^\/api\/robot-scenarios\/([a-z0-9-]+)\/compose$/);
@@ -142,7 +153,9 @@ async function routeRequest(req, res) {
       return json(res, 202, { accepted: true, model: scopeModel(next, principal) }, origin, rate);
     }
     if (req.method === "POST" && pathname === "/api/simulations") {
-      const input = validateSimulationInput(await readJson(req, config)), model = scopeModel(tenantModel(principal), principal), job = launchJob("simulation", principal, (emit) => runSimulation(model, input, emit));
+      const body = await readJson(req, config), input = validateSimulationInput(body), model = scopeModel(tenantModel(principal), principal);
+      if (body.experiment !== undefined) input.experiment = validateExperimentProfile(body.experiment, model);
+      const job = launchJob("simulation", principal, (emit) => runSimulation(model, input, emit));
       record("simulation_queued", { jobId: job.id, mode: input.mode, result: "queued" }, principal);
       return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
     }
@@ -150,12 +163,8 @@ async function routeRequest(req, res) {
       const input = validateConnectionInput(await readJson(req, config), adapterIds), job = launchJob("connection_test", principal, async (emit) => { const decision = safeConnectionRequest(input); await emit({ type: "connection_decision", adapter: input.adapter, decision }); return decision; });
       return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
     }
-    if (req.method === "POST" && pathname === "/api/lenses/query") {
-      const input = await readJson(req, config), job = launchJob("lens_query", principal, (emit) => runLensQuery(input, emit));
-      return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
-    }
     if (req.method === "POST" && pathname === "/api/agent/tasks") {
-      const task = validateAgentTask(await readJson(req, config), runtime.limits), job = launchJob("agent_task", principal, (emit) => runAgentTask(config, task, principal, emit));
+      const task = validateAgentTask(await readJson(req, config), runtime.limits), job = launchJob("agent_task", principal, (emit) => runOperationsPlan(task, principal, robotScenarioById(tenantModel(principal).activeScenarioId) || challengeScenario, emit));
       record("agent_task_queued", { jobId: job.id, goal: task.goal.slice(0, 120), result: "queued" }, principal);
       return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
     }
@@ -172,6 +181,26 @@ async function routeRequest(req, res) {
       return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
     }
     if (req.method === "GET" && pathname === "/api/robot-routines/active") return json(res, 200, [...jobs.values()].filter((job) => job.tenantId === principal.tenantId && job.kind === "robot_routine" && ["queued", "running", "awaiting_approval"].includes(job.status)).map(jobEnvelope), origin, rate);
+    const resolutionMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/resolution$/);
+    if (resolutionMatch && ["GET", "POST"].includes(req.method)) {
+      const job = jobs.get(resolutionMatch[1]); assertTenantResource(job, principal);
+      if (job.kind !== "robot_routine") throw new HttpError(400, "Resolution applies only to operations routines.", "validation_error");
+      if (req.method === "GET") return json(res, 200, job.resolution || { status: "awaiting_evidence", jobStatus: job.status, simulated: true }, origin, rate);
+      if (!principal.roles.some(role => ["admin", "approver"].includes(role))) throw new HttpError(403, "An approver or administrator role is required.", "role_denied");
+      if ((job.resolutionHistory?.length || 0) >= 64) throw new HttpError(409, "Resolution revision limit reached.", "resolution_limit");
+      const actionKind = job.result?.scenarioId === "autonomous-inspection" ? "inspection" : "material_move";
+      const proof = validateResolutionProof(await readJson(req, config), { jobId: job.id, jobStatus: job.status, actionKind });
+      const recordData = { ...proof, scenarioId: job.result.scenarioId, tenantId: principal.tenantId, reviewedBy: principal.userId,
+        recordedAt: new Date().toISOString(), revision: (job.resolutionHistory?.length || 0) + 1,
+        reviewHashes: job.events.filter(event => event.type === "approval_resolved" && event.reviewHash).map(event => event.reviewHash),
+        evidenceVerification: "User-attested local simulation references; no independent sensor or SAP verification" };
+      recordData.recordHash = crypto.createHash("sha256").update(JSON.stringify(recordData)).digest("hex");
+      job.resolution = recordData; (job.resolutionHistory ||= []).push(recordData);
+      job.result = { ...job.result, resolutionStatus: recordData.status };
+      appendJobEvent(job, { type: "resolution_recorded", result: recordData });
+      record("exception_resolution_recorded", { jobId: job.id, status: proof.status, recordHash: recordData.recordHash, revision: recordData.revision }, principal);
+      return json(res, 200, recordData, origin, rate);
+    }
     const actionMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/(approval|cancel)$/);
     if (req.method === "POST" && actionMatch) {
       const job = jobs.get(actionMatch[1]); assertTenantResource(job, principal);

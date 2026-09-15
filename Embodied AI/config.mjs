@@ -32,7 +32,9 @@ export const config = Object.freeze({
     jwksTtlMs: integer("OIDC_JWKS_TTL_MS", 300000, 30000, 3600000)
   },
   orchestrator: {
-    enabled: process.env.OPENAI_ENABLED === "true",
+    // Legacy provider settings remain inert; the operations API exposes only local
+    // Joule simulation until a supported tenant interface is implemented.
+    enabled: false,
     apiKey: process.env.OPENAI_API_KEY || "",
     baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
     primaryModel: process.env.ORCHESTRATOR_MODEL || "gpt-5.6-sol",

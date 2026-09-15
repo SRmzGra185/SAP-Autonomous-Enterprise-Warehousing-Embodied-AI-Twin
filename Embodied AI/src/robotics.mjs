@@ -1,4 +1,6 @@
-const VERSION = "0.5.0-embodied-ai";
+import { MODEL_VERSION, retiredPlatformIds } from "./domain.mjs";
+import { routineKpis } from "./industrial-kpis.mjs";
+const VERSION = MODEL_VERSION;
 
 function node(id, kind, visual, name, subtitle, x, y, z, capacity, service, color, deviceClass, protocols) {
   return { id, kind, visual, name, subtitle, x, y, z, capacity, service, color, deviceClass, protocols, visibility: "tenant" };
@@ -14,67 +16,63 @@ function transition(id, from, to, receptivity) {
 
 export const robotScenarios = [
   {
-    id: "retail-replenishment",
-    domain: "Retail",
-    name: "SAP Retail Autonomous Shelf Replenishment",
-    objective: "Detect a shelf gap, retrieve the correct SKU, replenish safely around shoppers, and reconcile inventory.",
-    robot: "Mobile manipulator",
-    controller: "ROS 2 behavior tree + navigation + grasp planner",
-    protocols: ["ROS 2", "MQTT", "REST/JSON", "RFID"],
-    sensors: ["RGB-D", "2D LiDAR", "RFID", "Shelf weight", "Safety scanner"],
+    id: "autonomous-orchestration", domain: "Orchestration",
+    name: "Autonomous Orchestration",
+    workspaceId: "orchestration",
+    assistants: ["Planning Assistant", "Product Design Assistant", "Manufacturing Assistant", "Logistics Assistant"],
+    objective: "Simulate a machine disruption, reconcile product constraints, re-plan production, move a spare part, and verify recovery.",
+    robot: "Recovery AMR + adaptive cobot", controller: "Local bounded cross-domain routine; Joule coordination simulated",
+    protocols: ["Simulated device events"], sensors: ["Machine status", "Part ID", "Torque", "Dispatch evidence"],
     model: {
-      id: "robot-retail-demo", name: "Retail Shelf-to-Replenishment Routine", version: VERSION,
+      id: "operations-recovery-demo", name: "Disruption-to-Recovery Routine", version: VERSION,
       nodes: [
-        node("retail-demand", "source", "posTerminal", "SAP S/4HANA Retail Inventory", "Stock signal, product master, and replenishment request", 55, 120, 0, 2, 1, "#385b78", "application", ["REST/JSON"]),
-        node("retail-shelf", "data", "retailShelf", "Smart Shelf", "Planogram, camera, RFID and weight sensing", 250, 120, 1, 4, 2, "#8b6f47", "sensor", ["MQTT", "RFID"]),
-        node("retail-backroom", "source", "rack", "Backroom Storage", "Reserved SKU and tote location", 250, 390, 1, 3, 2, "#506a78", "storage", ["REST/JSON", "RFID"]),
-        node("retail-robot", "agent", "mobileManipulator", "Replenishment Robot", "AMR navigation plus 6-axis picking arm", 485, 250, 2, 1, 4, "#2d6f68", "robot", ["ROS 2", "MQTT"]),
-        node("retail-zone", "audit", "safetyZone", "Customer Safety Zone", "Human detection, speed limit and stop field", 720, 250, 3, 1, 1, "#9b643e", "safety", ["OPC UA", "ROS 2"]),
-        node("retail-evidence", "audit", "sensorMast", "Inventory Evidence", "Image, weight and stock reconciliation", 920, 250, 4, 2, 2, "#705783", "inspection", ["REST/JSON"])
+        node("orch-alert", "source", "sensorMast", "Disruption Signal", "Simulated bearing alarm and impacted order", 40, 210, 0, 2, 1, "#52757a", "sensor", ["Simulation"]),
+        node("orch-plan", "data", "posTerminal", "Recovery Planning", "Prioritize backlog and propose a recovery window", 235, 100, 0, 2, 2, "#596a85", "application", ["Simulation"]),
+        node("orch-design", "data", "assemblyFixture", "Engineering Constraints", "Check spare-part compatibility and approved recipe", 410, 390, 0, 2, 2, "#706a85", "application", ["Simulation"]),
+        node("orch-amr", "agent", "amr", "Spare-Part Delivery", "Dispatch a simulated mobile robot to the recovery cell", 580, 100, 0, 2, 3, "#417b75", "robot", ["Simulation"]),
+        node("orch-cell", "agent", "cobotCell", "Recovery Workcell", "Run the approved substitute recipe", 775, 210, 0, 1, 4, "#4d657a", "robot", ["Simulation"]),
+        node("orch-release", "audit", "inspectionCell", "Recovery Verification", "Verify quality and record recovery evidence; no business posting", 990, 210, 0, 2, 2, "#786481", "inspection", ["Simulation"])
       ],
-      edges: [["retail-demand", "retail-shelf"], ["retail-shelf", "retail-robot"], ["retail-backroom", "retail-robot"], ["retail-robot", "retail-zone"], ["retail-zone", "retail-evidence"], ["retail-evidence", "retail-demand"]]
+      edges: [["orch-alert","orch-plan"],["orch-plan","orch-design"],["orch-design","orch-amr"],["orch-amr","orch-cell"],["orch-cell","orch-release"]]
     },
     grafcet: {
       initial: "S0",
       steps: [
-        step("S0", "Await shortage", "Subscribe to shelf-gap and inventory events.", "retail-demand", "inventory.watch()", "shelf_weight", "gap > 2 units"),
-        step("S1", "Validate SKU", "Match planogram position to product master and stock.", "retail-shelf", "vision.identify_sku()", "rgbd + rfid", "confidence >= 0.95"),
-        step("S2", "Reserve stock", "Reserve one replenishment tote in the backroom.", "retail-backroom", "erp.reserve_stock()", "rfid", "reservation accepted"),
-        step("S3", "Pick product", "Navigate, localize tote, grasp SKU, and verify grip.", "retail-robot", "arm.pick_verified()", "rgbd + gripper_force", "grip && sku match", 2),
-        step("S4", "Enter aisle", "Request aisle access and apply human-aware speed.", "retail-zone", "nav.enter_slow_zone()", "lidar + safety_scan", "zone clear"),
-        step("S5", "Replenish shelf", "Place product in the assigned planogram slot.", "retail-robot", "arm.place_to_pose()", "rgbd + force", "placement stable", 2),
-        step("S6", "Reconcile evidence", "Confirm weight delta, image, RFID, and inventory.", "retail-evidence", "audit.commit_evidence()", "weight + rgbd + rfid", "all evidence agrees")
+        step("S0", "Detect disruption", "Read the simulated asset alarm and affected production order.", "orch-alert", "operations.detect_disruption()", "condition_event", "affected order identified"),
+        step("S1", "Propose recovery", "Allocate spare capacity and prioritize affected orders.", "orch-plan", "planning.propose_recovery()", "capacity_snapshot", "recovery plan proposed"),
+        step("S2", "Validate constraints", "Check product revision, replacement part and process limits.", "orch-design", "engineering.validate_recovery()", "part_revision", "approved substitute compatible"),
+        step("S3", "Deliver spare", "Move the reserved replacement part to the cell.", "orch-amr", "fleet.deliver_spare()", "dock_presence", "spare arrived", 2),
+        step("S4", "Resume production", "Simulate a controlled trial with the revised recipe.", "orch-cell", "manufacturing.trial_recipe()", "torque + presence", "trial complete", 2),
+        step("S5", "Verify recovery", "Check the trial result and record the simulated release.", "orch-release", "operations.verify_recovery()", "quality_evidence", "recovery evidence complete")
       ],
       transitions: [
-        transition("T0", "S0", "S1", "shelf_gap = TRUE"),
-        transition("T1", "S1", "S2", "sku_confidence >= 0.95"),
-        transition("T2", "S2", "S3", "reservation = ACCEPTED"),
-        transition("T3", "S3", "S4", "grip_verified = TRUE"),
-        transition("T4", "S4", "S5", "protective_field = CLEAR"),
-        transition("T5", "S5", "S6", "placement_complete = TRUE"),
-        transition("T6", "S6", "S0", "inventory_reconciled = TRUE")
+        transition("T0","S0","S1","disruption_confirmed = TRUE"), transition("T1","S1","S2","recovery_proposed = TRUE"),
+        transition("T2","S2","S3","constraints_valid = TRUE"), transition("T3","S3","S4","spare_arrived = TRUE"),
+        transition("T4","S4","S5","trial_complete = TRUE"), transition("T5","S5","S0","recovery_verified = TRUE")
       ]
     }
   },
   {
     id: "warehouse-fulfillment",
-    domain: "Warehousing",
-    name: "SAP EWM Multi-Robot Order Fulfillment",
+    domain: "Logistics",
+    name: "Autonomous Logistics",
+    workspaceId: "logistics",
+    assistants: ["Logistics Assistant"],
     objective: "Allocate an order, dispatch an AMR, pick a tote, verify weight, and release the shipment without congestion.",
     robot: "AMR fleet + picking arm",
-    controller: "Joule dispatch + SAP Warehouse Robotics + PLC handshake",
+    controller: "Local AMR routine; Logistics Assistant coordination simulated",
     protocols: ["ROS 2", "OPC UA", "MQTT", "REST/JSON"],
     sensors: ["LiDAR", "Barcode", "RFID", "Scale", "Photoelectric", "Encoders"],
     model: {
       id: "robot-warehouse-demo", name: "Warehouse Order-to-Dispatch Routine", version: VERSION,
       nodes: [
-        node("wh-order", "source", "posTerminal", "SAP EWM Order Wave", "Warehouse order, priority, SKU, quantity, and cut-off", 45, 210, 0, 4, 1, "#385b78", "application", ["REST/JSON"]),
+        node("wh-order", "source", "posTerminal", "Warehouse Order Context", "Warehouse order, priority, SKU, quantity, and cut-off", 45, 210, 0, 4, 1, "#385b78", "application", ["REST/JSON"]),
         node("wh-rack", "source", "rack", "AS/RS Rack", "Reserved tote and storage coordinates", 240, 100, 1, 6, 2, "#506a78", "storage", ["OPC UA", "RFID"]),
         node("wh-amr", "agent", "amr", "AMR Fleet", "Traffic-aware tote transportation", 430, 210, 2, 4, 3, "#2c6b73", "robot", ["ROS 2", "MQTT"]),
         node("wh-pick", "agent", "cobotCell", "Robotic Pick Cell", "Vision-guided bin picking and sortation", 630, 100, 3, 2, 4, "#4c6078", "robot", ["ROS 2", "OPC UA"]),
         node("wh-conveyor", "bdc", "conveyor", "Conveyor Merge", "PLC-controlled material flow and routing", 630, 390, 3, 3, 2, "#6c6554", "machine", ["OPC UA"]),
         node("wh-scale", "audit", "inspectionCell", "Weight / Scan Gate", "Barcode, mass and exception decision", 835, 210, 4, 2, 2, "#77526b", "inspection", ["OPC UA", "REST/JSON"]),
-        node("wh-dock", "consume", "loadingDock", "SAP EWM Goods Issue", "Handling unit, dock, and shipment confirmation", 1010, 210, 5, 2, 2, "#386b64", "machine", ["REST/JSON"])
+        node("wh-dock", "consume", "loadingDock", "Dispatch Evidence", "Handling unit, dock, and shipment confirmation", 1010, 210, 5, 2, 2, "#386b64", "machine", ["REST/JSON"])
       ],
       edges: [["wh-order", "wh-rack"], ["wh-rack", "wh-amr"], ["wh-amr", "wh-pick"], ["wh-pick", "wh-conveyor"], ["wh-conveyor", "wh-scale"], ["wh-scale", "wh-dock"]]
     },
@@ -102,8 +100,10 @@ export const robotScenarios = [
   },
   {
     id: "adaptive-assembly",
-    domain: "Assembly",
-    name: "SAP Digital Manufacturing Adaptive Cobot Assembly",
+    domain: "Manufacturing",
+    name: "Autonomous Manufacturing",
+    workspaceId: "manufacturing",
+    assistants: ["Manufacturing Assistant", "Product Design Assistant"],
     objective: "Read the production variant, select a tool, assemble with force control, verify torque, and route defects to rework.",
     robot: "6-axis collaborative robot",
     controller: "Skill graph + trajectory planner + PLC state machine",
@@ -112,13 +112,13 @@ export const robotScenarios = [
     model: {
       id: "robot-assembly-demo", name: "Variant-to-Assembly Routine", version: VERSION,
       nodes: [
-        node("asm-order", "source", "posTerminal", "SAP Digital Manufacturing Order", "Variant, BOM, routing, recipe, and serial number", 45, 210, 0, 2, 1, "#385b78", "application", ["REST/JSON"]),
+        node("asm-order", "source", "posTerminal", "Production Order Context", "Variant, BOM, routing, recipe, and serial number", 45, 210, 0, 2, 1, "#385b78", "application", ["REST/JSON"]),
         node("asm-feeder", "source", "partsFeeder", "Flexible Parts Feeder", "Vision-localized parts and availability", 250, 100, 1, 4, 2, "#6e6654", "machine", ["OPC UA"]),
         node("asm-cobot", "agent", "cobotCell", "Cobot Workcell", "Tool change, pick, insert and fastening", 470, 210, 2, 1, 5, "#3b6475", "robot", ["ROS 2", "PROFINET"]),
         node("asm-fixture", "bdc", "assemblyFixture", "Smart Fixture", "Clamp, presence and datum verification", 680, 100, 3, 1, 2, "#655b78", "device", ["OPC UA"]),
         node("asm-torque", "bdc", "torqueStation", "Torque Controller", "Fastening recipe and curve capture", 680, 390, 3, 1, 2, "#866a45", "device", ["PROFINET", "OPC UA"]),
         node("asm-inspect", "audit", "inspectionCell", "Vision Quality Gate", "Geometry, presence and traceability inspection", 885, 210, 4, 2, 3, "#77526b", "inspection", ["ROS 2", "REST/JSON"]),
-        node("asm-rework", "audit", "safetyZone", "SAP Quality Management Gate", "Usage decision, release, or controlled rework", 1030, 210, 5, 1, 1, "#9b643e", "safety", ["OPC UA"])
+        node("asm-rework", "audit", "safetyZone", "Quality Release Gate", "Usage decision, release, or controlled rework", 1030, 210, 5, 1, 1, "#9b643e", "safety", ["OPC UA"])
       ],
       edges: [["asm-order", "asm-feeder"], ["asm-order", "asm-cobot"], ["asm-feeder", "asm-cobot"], ["asm-cobot", "asm-fixture"], ["asm-fixture", "asm-torque"], ["asm-torque", "asm-inspect"], ["asm-inspect", "asm-rework"]]
     },
@@ -148,8 +148,10 @@ export const robotScenarios = [
   },
   {
     id: "autonomous-inspection",
-    domain: "Inspection",
-    name: "SAP Asset Management Autonomous Inspection",
+    domain: "Asset Management",
+    name: "Autonomous Asset Management",
+    workspaceId: "asset-management",
+    assistants: ["Asset and Service Assistant"],
     objective: "Plan a safe mission, collect multimodal sensor evidence, detect an anomaly, and create a governed maintenance action.",
     robot: "Quadruped inspection robot",
     controller: "Mission planner + autonomy stack + anomaly models",
@@ -158,13 +160,13 @@ export const robotScenarios = [
     model: {
       id: "robot-inspection-demo", name: "Mission-to-Maintenance Routine", version: VERSION,
       nodes: [
-        node("insp-plan", "source", "posTerminal", "SAP Asset Management Inspection Plan", "Asset route, checkpoints, condition limits, and work context", 45, 210, 0, 2, 1, "#385b78", "application", ["REST/JSON"]),
+        node("insp-plan", "source", "posTerminal", "Asset Inspection Context", "Asset route, checkpoints, condition limits, and work context", 45, 210, 0, 2, 1, "#385b78", "application", ["REST/JSON"]),
         node("insp-dock", "bdc", "robotDock", "Robot Dock", "Charge, calibration and mission handoff", 240, 390, 1, 1, 2, "#536b73", "device", ["OPC UA", "ROS 2"]),
         node("insp-robot", "agent", "quadruped", "Inspection Robot", "Autonomous navigation and sensor positioning", 430, 210, 2, 1, 4, "#386b64", "robot", ["ROS 2", "MQTT"]),
         node("insp-machine", "bdc", "processMachine", "Critical Machine", "Motor, pump, gearbox and process condition", 640, 210, 3, 2, 3, "#5c6574", "machine", ["OPC UA"]),
         node("insp-sensors", "data", "sensorMast", "Sensor Fusion", "Thermal, acoustic, vibration, gas and RGB evidence", 820, 100, 4, 4, 2, "#705783", "sensor", ["MQTT", "JSON"]),
         node("insp-ai", "data", "inspectionCell", "Anomaly Workbench", "Vector similarity and condition classification", 820, 390, 4, 2, 3, "#68598b", "analytics", ["REST/JSON"]),
-        node("insp-workorder", "audit", "safetyZone", "SAP S/4HANA Maintenance Gate", "Human review, evidence package, and maintenance order", 1010, 210, 5, 1, 2, "#9b643e", "safety", ["REST/JSON"])
+        node("insp-workorder", "audit", "safetyZone", "Maintenance Review Gate", "Human review, evidence package, and maintenance order", 1010, 210, 5, 1, 2, "#9b643e", "safety", ["REST/JSON"])
       ],
       edges: [["insp-plan", "insp-dock"], ["insp-dock", "insp-robot"], ["insp-robot", "insp-machine"], ["insp-machine", "insp-sensors"], ["insp-sensors", "insp-ai"], ["insp-ai", "insp-workorder"]]
     },
@@ -194,22 +196,18 @@ export const robotScenarios = [
 
 export const robotScenarioIds = robotScenarios.map((scenario) => scenario.id);
 
-const platformLayout = {
-  "source-s4": [24, 48],
-  "source-file": [24, 142],
-  "source-external": [24, 236],
-  cockpit: [192, 142],
-  datasphere: [360, 48],
-  bw: [360, 142],
-  connect: [360, 236],
-  objectstore: [528, 94],
-  ecosystem: [528, 236],
-  dataproduct: [696, 142],
-  sac: [864, 48],
-  intelligentapps: [864, 142],
-  joule: [864, 236],
-  aIudit: [864, 330]
+// Keep domain cards in an intentional order; IDs remain stable for existing saved scenarios.
+const scenarioOrder = ["autonomous-inspection", "adaptive-assembly", "autonomous-orchestration", "warehouse-fulfillment"];
+robotScenarios.sort((a, b) => scenarioOrder.indexOf(a.id) - scenarioOrder.indexOf(b.id));
+for (const scenario of robotScenarios) scenario.kpiProfile = {
+  status: "instrumentation plan; not measured results",
+  metrics: (routineKpis[scenario.id] || []).map(([name, definition, requiredInputs]) => ({ name, definition, requiredInputs }))
 };
+
+export function routineRoute(scenario) {
+  return ["connect", "operation-context", "joule", "approval", scenario.workspaceId,
+    ...scenario.grafcet.steps.map(entry => entry.nodeId), "evidence"];
+}
 
 function uniqueEdges(edges, ids) {
   const seen = new Set();
@@ -227,10 +225,10 @@ export function composeRobotTwin(currentModel, foundationModel, scenario) {
   const foundationIds = new Set(foundationModel.nodes.map((entry) => entry.id));
   const currentById = new Map((currentModel?.nodes || []).map((entry) => [entry.id, entry]));
   const platformNodes = foundationModel.nodes.map((entry) => {
-    const existing = currentById.get(entry.id) || {}, position = platformLayout[entry.id] || [entry.x, entry.y];
-    return { ...entry, ...existing, x: position[0], y: position[1], zone: "platform", layer: "data-fabric" };
+    const existing = currentById.get(entry.id) || {};
+    return { ...existing, ...entry, capacity: existing.capacity || entry.capacity, service: existing.service || entry.service, zone: "platform", layer: "data-fabric" };
   });
-  const customNodes = (currentModel?.nodes || []).filter((entry) => !foundationIds.has(entry.id) && !allRobotIds.has(entry.id) && entry.layer !== "robotics");
+  const customNodes = (currentModel?.nodes || []).filter((entry) => !foundationIds.has(entry.id) && !allRobotIds.has(entry.id) && entry.layer !== "robotics" && !retiredPlatformIds.has(entry.id) && !entry.id.startsWith("retail-"));
   const sourceXs = scenario.model.nodes.map((entry) => Number(entry.x || 0)), sourceYs = scenario.model.nodes.map((entry) => Number(entry.y || 0));
   const minX = Math.min(...sourceXs), maxX = Math.max(...sourceXs), minY = Math.min(...sourceYs), maxY = Math.max(...sourceYs);
   const robotNodes = scenario.model.nodes.map((entry) => ({
@@ -243,26 +241,18 @@ export function composeRobotTwin(currentModel, foundationModel, scenario) {
   }));
   const nodes = [...platformNodes, ...customNodes, ...robotNodes], ids = new Set(nodes.map((entry) => entry.id));
   const platformEdges = [...foundationModel.edges, ...(currentModel?.edges || []).filter(([from, to]) => !allRobotIds.has(from) && !allRobotIds.has(to))];
-  const entryId = scenario.grafcet.steps[0]?.nodeId || robotNodes[0]?.id;
-  const agentId = robotNodes.find((entry) => entry.kind === "agent")?.id || entryId;
-  const dataId = robotNodes.find((entry) => entry.kind === "data")?.id;
-  const evidenceId = [...robotNodes].reverse().find((entry) => entry.kind === "audit")?.id || scenario.grafcet.steps.at(-1)?.nodeId;
-  const crossEdges = [
-    ["source-s4", entryId],
-    ["cockpit", entryId],
-    ["dataproduct", agentId],
-    ["joule", agentId],
-    dataId ? [dataId, "datasphere"] : null,
-    evidenceId ? [evidenceId, "aIudit"] : null
-  ].filter(Boolean);
+  const flow = routineRoute(scenario);
+  const crossEdges = [...flow.slice(1).map((id, index) => [flow[index], id]),
+    [scenario.grafcet.steps.at(-1).nodeId, scenario.grafcet.steps[0].nodeId]];
   const edges = uniqueEdges([...platformEdges, ...scenario.model.edges, ...crossEdges], ids);
   return {
     ...foundationModel,
     id: `unified-${scenario.id}`,
-    name: `SAP Autonomous Enterprise + ${scenario.domain} Embodied AI Twin`,
-    version: "0.5.0-embodied-ai",
+    name: `SAP Autonomous Operations · ${scenario.domain} Twin`,
+    version: VERSION,
     layout: "unified-campus",
     activeScenarioId: scenario.id,
+    executionRoute: flow,
     nodes,
     edges
   };
@@ -291,15 +281,17 @@ export async function runRobotRoutine(scenario, input, emit, controls = {}) {
   };
   const started = Date.now(), cycles = input.cycles, steps = scenario.grafcet.steps, transitions = scenario.grafcet.transitions;
   await emit({ type: "robot_routine_started", scenarioId: scenario.id, scenarioName: scenario.name, mode: input.mode, cycles, initialStep: scenario.grafcet.initial, productionCommands: false });
-  await transfer("source-s4", "cockpit", "SAP business event → governed context");
-  await transfer("cockpit", "joule", "Context → agent routine selection");
-  let previousNodeId = "joule";
+  await transfer("connect", "operation-context", "Shared data sample → governed operations context");
+  await transfer("operation-context", "joule", "Context → simulated assistant plan");
+  await transfer("joule", "approval", "Plan → local execution policy");
+  await transfer("approval", scenario.workspaceId, "Simulation policy → domain routine (assisted approval occurs before each command)");
+  let previousNodeId = scenario.workspaceId;
   for (let cycle = 1; cycle <= cycles; cycle += 1) {
     for (let index = 0; index < steps.length; index += 1) {
       const current = steps[index], nextTransition = transitions.find((item) => item.from === current.id);
       const durationMs = duration(current.duration);
       await emit({ type: "grafcet_step_active", scenarioId: scenario.id, cycle, stepId: current.id, nodeId: current.nodeId, fromNodeId: previousNodeId, durationMs, index, totalSteps: steps.length, label: current.label, action: current.action, sensor: current.sensor, expected: current.expected, awaitingApproval: input.mode === "assisted" });
-      if (input.mode === "assisted") await controls.requestApproval({ scenarioId: scenario.id, cycle, stepId: current.id, nodeId: current.nodeId, label: current.label, command: current.command, action: current.action, expected: current.expected });
+      if (input.mode === "assisted") await controls.requestApproval({ scenarioId: scenario.id, cycle, stepId: current.id, transitionId: nextTransition?.id, nextStepId: nextTransition?.to, nodeId: current.nodeId, label: current.label, command: current.command, action: current.action, expected: current.expected });
       if (controls.signal?.aborted) throw new Error("Routine cancelled.");
       await emit({ type: "routine_transfer", scenarioId: scenario.id, fromNodeId: previousNodeId, toNodeId: current.nodeId, nodeId: current.nodeId, stepId: current.id, label: current.label, durationMs, simulated: true });
       await emit({
@@ -318,8 +310,7 @@ export async function runRobotRoutine(scenario, input, emit, controls = {}) {
       previousNodeId = current.nodeId;
     }
   }
-  await transfer(previousNodeId, "datasphere", "Physical evidence → SAP Datasphere");
-  await transfer("datasphere", "aIudit", "Evidence → governance trace");
+  await transfer(previousNodeId, "evidence", "Simulated physical outcome → local execution evidence");
   const elapsedMs = Date.now() - started;
   await emit({ type: "robot_routine_complete", scenarioId: scenario.id, cycles, elapsedMs, finalStep: scenario.grafcet.initial, productionCommands: false });
   return {
@@ -330,6 +321,8 @@ export async function runRobotRoutine(scenario, input, emit, controls = {}) {
     transitionsEvaluated: transitions.length * cycles,
     elapsedMs,
     productionCommands: false,
+    resolutionStatus: "awaiting_evidence",
+    timingBasis: "Animation playback only; not measured machine time. Calibrated DES experiments use a separate seconds-based profile.",
     evidence: ["commands", "sensor samples", "transition receptivities", "active steps", "tenant audit trace"]
   };
 }

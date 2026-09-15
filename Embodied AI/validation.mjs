@@ -34,7 +34,7 @@ export function validateModelInput(body) {
 }
 
 export function validateSimulationInput(body = {}) {
-  return { mode: oneOf(body.mode || "fast", "mode", ["fast", "realtime", "monte-carlo"]), entities: Math.floor(number(body.entities ?? 24, "entities", 1, 500)), runs: Math.floor(number(body.runs ?? 5, "runs", 1, 50)), seed: Math.floor(number(body.seed ?? 42, "seed", 0, 2147483647)) };
+  return { mode: oneOf(body.mode || "fast", "mode", ["fast", "realtime", "monte-carlo"]), entities: Math.floor(number(body.entities ?? 24, "entities", 1, 80)), runs: Math.floor(number(body.runs ?? 5, "runs", 1, 200)), seed: Math.floor(number(body.seed ?? 42, "seed", 0, 4294967295)) };
 }
 
 export function validateConnectionInput(body, adapterIds) {

@@ -1,0 +1,21 @@
+/* Append-only exception UI styles; linked by the main index integration. */
+.exception-controls, .exception-proof { min-width: 0; margin: 14px 0; padding: 16px; border: 1px solid #ccd6dd; border-radius: 12px; background: #f7f9fb; color: #23384a; }
+.exception-controls[hidden], .exception-proof[hidden], .exception-review[hidden] { display: none; }
+.exception-controls h3, .exception-proof h3 { margin: 0 0 10px; font-size: 15px; overflow-wrap: anywhere; }
+.exception-notice { font-size: 12px; line-height: 1.5; color: #516474; }
+.exception-grid, .exception-physical, .exception-proof-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.exception-physical { margin: 16px 0; padding: 12px; border: 1px solid #ccd6dd; border-radius: 8px; }
+.exception-physical legend, .exception-proof-row legend { font-size: 12px; font-weight: 600; padding: 0 4px; }
+.exception-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; font-size: 12px; font-weight: 600; }
+.exception-field textarea, .exception-field input, .exception-field select { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px; border: 1px solid #afbdc9; border-radius: 6px; background: white; color: #23384a; font: inherit; font-weight: 400; }
+.exception-field textarea { resize: vertical; }
+.exception-field :focus-visible, .exception-review input:focus-visible { outline: 2px solid #28798b; outline-offset: 2px; }
+.exception-review { display: flex; gap: 9px; align-items: flex-start; font-size: 13px; line-height: 1.5; }
+.exception-review input { flex: 0 0 auto; margin-top: 3px; width: auto; }
+.exception-proof-row { min-width: 0; display: grid; gap: 9px; border: 1px solid #ccd6dd; border-radius: 8px; padding: 12px; }
+.exception-proof-status { overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
+.exception-proof > button { margin-top: 14px; }
+#approval-panel:has(.exception-controls) { flex-wrap: wrap; }
+#approval-panel > .exception-controls { flex: 1 1 100%; order: 1; width: 100%; }
+#approval-panel:has(.exception-controls) > .approval-buttons { order: 2; }
+@media (max-width: 700px) { .exception-grid, .exception-physical, .exception-proof-grid { grid-template-columns: 1fr; } .exception-controls, .exception-proof { padding: 12px; } }

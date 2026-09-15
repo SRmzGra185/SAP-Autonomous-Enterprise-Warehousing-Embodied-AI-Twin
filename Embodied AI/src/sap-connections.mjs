@@ -1,24 +1,26 @@
 // Offline metadata only. No storage, environment reads, GUI automation, or I/O.
 const ROLE_KINDS = Object.freeze({
-  ERP: "sap_gui_abap", EWM: "sap_gui_abap", BW: "sap_gui_abap",
-  BDC: "cloud", Datasphere: "cloud", SAC: "cloud", Joule: "cloud"
+  BDC_CONNECT: "cloud", JOULE: "cloud"
+});
+const ROLE_DETAILS = Object.freeze({
+  BDC_CONNECT: {
+    label: "BDC Connect",
+    description: "Shares governed data products with supported external platforms; this draft does not establish a data-sharing connection."
+  },
+  JOULE: {
+    label: "Joule",
+    description: "Actions require supported interfaces in your tenant; this draft does not establish a universal Joule API or authorize actions."
+  }
 });
 const SAFETY = Object.freeze({ readOnly: true, liveEnabled: false });
 const COMMON_FIELDS = ["role", "kind", "environment"];
 const KIND_FIELDS = {
-  sap_gui_abap: ["connectionName", "sid", "client"],
   cloud: ["tenantUrl", "destination"]
 };
 const FIELDS = {
-  role: { type: "string", maxLength: 10, enum: ["", ...Object.keys(ROLE_KINDS)] },
-  kind: { type: "string", maxLength: 12, enum: ["", ...Object.keys(KIND_FIELDS)] },
+  role: { type: "string", maxLength: 11, enum: ["", ...Object.keys(ROLE_KINDS)] },
+  kind: { type: "string", maxLength: 5, enum: ["", ...Object.keys(KIND_FIELDS)] },
   environment: { type: "string", maxLength: 10, enum: ["", "mock", "sandbox", "production"] },
-  connectionName: {
-    type: "string", maxLength: 120,
-    pattern: "^(?:[\\p{L}\\p{N}][\\p{L}\\p{N} ._()/-]*)?$"
-  },
-  sid: { type: "string", maxLength: 3, pattern: "^(?:[A-Z][A-Z0-9]{2})?$" },
-  client: { type: "string", maxLength: 3, pattern: "^(?:[0-9]{3})?$" },
   tenantUrl: { type: "string", maxLength: 2048, format: "tenant-origin-or-empty" },
   destination: {
     type: "string", maxLength: 128,
@@ -38,8 +40,7 @@ function issue(field, code, message) {
 function emptyProfile(role = "") {
   const kind = ROLE_KINDS[role] || "";
   return {
-    role, kind, environment: "",
-    ...Object.fromEntries((KIND_FIELDS[kind] || []).map((field) => [field, ""])),
+    role, kind, environment: "", tenantUrl: "", destination: "",
     ...SAFETY
   };
 }
@@ -47,7 +48,7 @@ function emptyProfile(role = "") {
 /** Fresh, JSON-serializable UI metadata. schema is a field descriptor, not a SAP schema. */
 export function sapConnectionDescriptor() {
   return {
-    version: 1,
+    version: 2,
     scope: "caller_owned_server_tenant_memory",
     storage: "none",
     policy: {
@@ -59,22 +60,17 @@ export function sapConnectionDescriptor() {
       additionalProperties: false,
       properties: structuredClone(FIELDS),
       requiredForCompletion: [...COMMON_FIELDS],
-      normalization: "Trim strings; uppercase ASCII SID only; canonicalize tenant URL to origin."
+      normalization: "Trim strings; canonicalize tenant URL to origin. Never infer missing metadata."
     },
     kinds: {
-      sap_gui_abap: {
-        fields: [...KIND_FIELDS.sap_gui_abap],
-        requiredForCompletion: [...KIND_FIELDS.sap_gui_abap],
-        note: "Reference to an administrator-supplied SAP Logon entry; not an OData/RFC bridge."
-      },
       cloud: {
         fields: [...KIND_FIELDS.cloud],
         atLeastOneForCompletion: [...KIND_FIELDS.cloud],
-        note: "Tenant origin and/or destination name only; no ABAP SID or client."
+        note: "Tenant origin and/or destination name only. Metadata does not prove connectivity or tenant interface support."
       }
     },
     roles: Object.entries(ROLE_KINDS).map(([role, kind]) => ({
-      role, kind, fields: [...COMMON_FIELDS, ...KIND_FIELDS[kind]],
+      role, kind, ...ROLE_DETAILS[role], fields: [...COMMON_FIELDS, ...KIND_FIELDS[kind]],
       template: emptyProfile(role)
     })),
     emptyTemplate: emptyProfile()
@@ -123,12 +119,8 @@ function sanitizeField(field, value, errors) {
   if (typeof value !== "string") return reject("invalid_type", "Use a string; leave unknown values as an empty string.");
   if (value.length > 2048) return reject("too_long", "Input exceeds the maximum string length.");
   if (UNSAFE_TEXT.test(value)) return reject("unsafe_text", "Control characters, invisible formatting, and markup are not allowed.");
-  let clean = value.trim();
+  const clean = value.trim();
   if (clean.length > rule.maxLength) return reject("too_long", `Maximum length is ${rule.maxLength} characters.`);
-  if (field === "sid") {
-    if (!/^[A-Za-z0-9]*$/.test(clean)) return reject("invalid_format", "SID must contain only ASCII letters and digits.");
-    clean = clean.toUpperCase();
-  }
   if (rule.enum && !rule.enum.includes(clean)) return reject("invalid_enum", "Choose a listed value or leave it blank.");
   if (rule.pattern && !new RegExp(rule.pattern, "u").test(clean)) return reject("invalid_format", "Value does not match the field's allowed format.");
   return field === "tenantUrl" ? sanitizeTenantUrl(clean, errors) : clean;
@@ -171,23 +163,12 @@ function readFields(input, errors) {
 export function validateSapProfile(input = {}) {
   const errors = [];
   const clean = readFields(input, errors);
-  const profile = { role: "", kind: "", environment: "", ...clean, ...SAFETY };
+  const profile = { ...emptyProfile(), ...clean, ...SAFETY };
   if (profile.role && profile.kind && ROLE_KINDS[profile.role] !== profile.kind) {
     errors.push(issue("kind", "role_kind_mismatch", "Role and connection kind must match the descriptor."));
   }
-  if (profile.kind) {
-    const allowed = KIND_FIELDS[profile.kind];
-    for (const field of Object.values(KIND_FIELDS).flat()) {
-      if (Object.hasOwn(clean, field) && !allowed.includes(field)) {
-        errors.push(issue(field, "field_not_applicable", "Omit fields belonging to the other connection kind, even when blank."));
-      }
-    }
-    for (const field of allowed) if (!Object.hasOwn(profile, field)) profile[field] = "";
-  }
   const missing = COMMON_FIELDS.filter((field) => !profile[field]);
-  if (profile.kind === "sap_gui_abap") {
-    missing.push(...KIND_FIELDS.sap_gui_abap.filter((field) => !profile[field]));
-  } else if (profile.kind === "cloud" && !profile.tenantUrl && !profile.destination) {
+  if (profile.kind === "cloud" && !profile.tenantUrl && !profile.destination) {
     missing.push("tenantUrl|destination");
   }
   const valid = errors.length === 0;

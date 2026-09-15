@@ -20,7 +20,7 @@ export function applyHeaders(res, origin = null) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
-    res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS");
   }
 }
 

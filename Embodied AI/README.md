@@ -1,35 +1,34 @@
-# SAP Embodied AI Simulation Lab
-
-A challenge-focused prototype that extends SAP Autonomous Enterprise concepts from digital orchestration into governed physical execution. It combines SAP business context, Joule-style agent orchestration, SAP Business Data Cloud concepts, discrete-event simulation, GRAFCET robot routines, and a 2D/3D digital twin.
+# SAP Autonomous Operations Twin
+Prototype: BDC Connect + Joule coordination concepts, four operations workcells, DES/Monte Carlo and evidence-gated simulated exception resolution.
 
 ## Run
+Use the existing Launch-SOXTECH-Desktop.cmd (legacy filename), or `npm start`, then open http://127.0.0.1:4173.
+Node.js 20 or newer is required. Include the complete project folder when sharing; server.mjs imports the root and src modules and serves public assets.
 
-Double-click `Launch-SOXTECH-Desktop.cmd` (legacy launcher filename), or run `npm start` and open <http://127.0.0.1:4173>.
+## Current scope
+Only BDC Connect and Joule have connection profiles. Both are offline metadata drafts, not working tenant connections. Asset Management, Manufacturing, Orchestration and Logistics are local scenario workspaces, not four additional SAP connections.
+Unrelated standalone catalog pages have been removed from the default model and UI. Historic project-log entries describe earlier versions.
 
-The first model is now a complete SAP EWM Order-to-Dispatch demonstration: SAP context and data products are connected to an AMR fleet, a robotic picking cell, conveyor control, inspection, and goods-issue confirmation.
+Implemented foundations:
+- 2D SVG and native WebGL 1 3D twin with GRAFCET routines.
+- Tenant-scoped async jobs and SSE; local deterministic planning with zero model calls.
+- Assisted single-action approval requiring a 15-field exception fingerprint, seven physical-resolvability checks and explicit operator review.
+- Separate post-job Resolution Proof. Missing/negative evidence cannot produce resolved_simulated. No real SAP exception is closed.
+- Seconds-based fixed/triangular/empirical timing profiles and capacity experiments. Baseline/candidate Monte Carlo uses repeatable seeds.
+- Distinct order P95, replication-mean uncertainty, queue time, utilization and throughput/hour.
+- OEE/MTTR/MTBF calculations from explicitly supplied observations where applicable; no synthetic OEE presented as measured performance.
+- Input validation, trusted-origin CORS, rate limits and existing tenant/role checks.
 
-## Challenge story
+## Read
+- USER_GUIDE.md: reproducible demonstration and controls.
+- POWER_OPERATIONS_ROUTES.md: four product directions, KPI research, architecture boundaries and ANYmal distinction.
+- SAP_CONNECTIONS.md: draft fields and supported local API contracts.
+- PROJECT_LOG.md: change history and verification evidence.
 
-1. SAP EWM releases a warehouse order.
-2. SAP Business Data Cloud supplies governed business and operational context.
-3. Joule agents plan and supervise a bounded outcome.
-4. SAP Warehouse Robotics / robot skills dispatch the physical work.
-5. Sensors and PLC signals advance an executable GRAFCET routine.
-6. Human approval and governance policies block live physical commands in the prototype.
-7. Robot evidence and business confirmation return to SAP Datasphere, SAP Analytics Cloud, and the audit trail.
+## Honest limits
+No live BDC/Joule/robot connections; no production commands. Browser animation is not physics or real-time control. Timing profiles marked observed are user-declared, not independently verified. The finite-cohort DES is not a full factory simulator: shift calendars, shared labor, finite transport buffers, breakdown/recovery processes and measured-data validation need further work. Resolution references are manually attested simulation evidence, not authenticated sensors or safety certification.
 
-## Implemented
+Connection drafts, jobs, approvals and proofs live in server memory and are lost on restart. Export what you need before stopping. Local plan caching is not provider prompt caching. The previous model-provider implementation is not exposed through the operations API; no safety bypass via a fallback model is permitted.
 
-- Unified SAP platform + physical workcell model in the same 2D/3D scene.
-- Four SAP-oriented Embodied AI scenarios: Retail, EWM Warehousing, Digital Manufacturing Assembly, and Asset Management Inspection.
-- Discrete-event simulation that follows the loaded SAP-to-physical route.
-- GRAFCET programming, simulation, shadow, assisted, and locked live modes.
-- SAP BDC Cockpit, SAP Datasphere, SAP BW PCE, SAP BDC Connect, SAP Data Products, SAP Analytics Cloud, SAP Intelligent Applications, and Joule Agent deep dives.
-- SAP HANA Cloud-style Vector, Spatial, Property Graph, Knowledge Graph, and JSON workbenches.
-- Asynchronous jobs and SSE event streams.
-- Tenant scoping, RBAC, input validation, CORS restrictions, rate limits, audit evidence, and production-command denial.
-- Prompt caching and bounded primary/fallback agent orchestration.
-
-## Honest boundary
-
-This is a realistic simulation prototype, not an SAP-delivered product and not a certified integration. SAP, robot, PLC, and cloud interfaces remain mocks or dry runs. Moving to a physical pilot requires real SAP service contracts, robot-vendor adapters, functional-safety engineering, device identity, network zoning, and customer-specific approvals.
+## Tests
+Run `npm test`. In the Codex Windows sandbox, Node path canonicalization may fail with EPERM even for an authorized project. Verification in this session used `node --preserve-symlinks --preserve-symlinks-main test/<test-name>.mjs`; this does not change the app source or grant filesystem access.

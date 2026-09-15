@@ -1,63 +1,58 @@
-export const MODEL_VERSION = "0.5.0-embodied-ai";
+export const MODEL_VERSION = "0.7.0-operations";
+export const retiredPlatformIds = new Set(["source-s4", "source-file", "source-external", "cockpit", "datasphere", "bw", "objectstore", "ecosystem", "dataproduct", "sac", "intelligentapps", "aIudit"]);
 
-export const hanaCapabilities = [
-  { id: "vector", name: "Vector", detail: "Similarity search and AI retrieval", color: "#7c5cff" },
-  { id: "spatial", name: "Spatial", detail: "Plant, route, and asset geometry", color: "#16a085" },
-  { id: "property-graph", name: "Property graph", detail: "Connected assets and events", color: "#0ea5e9" },
-  { id: "knowledge-graph", name: "Knowledge graph", detail: "Business meaning and relationships", color: "#f59e0b" },
-  { id: "json", name: "JSON", detail: "Flexible operational payloads", color: "#f97316" }
-];
+const platformNode = (id, kind, visual, name, subtitle, x, y, workspace, color = "#40566a") => ({
+  id, kind, visual, name, subtitle, x, y, z: 0, capacity: 3, service: 2, color,
+  zone: "platform", workspace, simulated: true
+});
 
-export const defaultModel = {
-  id: "sap-autonomous-enterprise-campus",
-  name: "SAP Autonomous Enterprise · Embodied AI Campus",
-  version: MODEL_VERSION,
-  layout: "platform-campus",
-  nodes: [
-    { id: "source-s4", kind: "source", visual: "warehouse", name: "SAP-Managed LoB Systems", subtitle: "SAP S/4HANA Cloud Private Edition · Sustainability · CX · HCM", x: 24, y: 48, z: 0, capacity: 4, service: 2, color: "#31506a", zone: "platform" },
-    { id: "source-file", kind: "source", visual: "warehouse", name: "Customer-Managed SAP Systems", subtitle: "SAP S/4HANA On-Premise · ECC · SAP BW", x: 24, y: 142, z: 0, capacity: 3, service: 3, color: "#49677a", zone: "platform" },
-    { id: "source-external", kind: "source", visual: "warehouse", name: "Non-SAP Source Systems", subtitle: "Files · APIs · AWS · Azure", x: 24, y: 236, z: 0, capacity: 3, service: 3, color: "#526d7a", zone: "platform" },
-    { id: "cockpit", kind: "bdc", visual: "tower", name: "SAP BDC Cockpit", subtitle: "Govern data products · packages · activation", x: 192, y: 142, z: 1, capacity: 3, service: 4, color: "#40566a", zone: "platform" },
-    { id: "datasphere", kind: "bdc", visual: "reactor", name: "SAP Datasphere", subtitle: "Robot events · business semantics · lineage", x: 360, y: 48, z: 2, capacity: 3, service: 5, color: "#1e5a63", zone: "platform" },
-    { id: "bw", kind: "bdc", visual: "silo", name: "SAP BW PCE", subtitle: "OEE · history · planning archive", x: 360, y: 142, z: 1, capacity: 3, service: 5, color: "#536774", zone: "platform" },
-    { id: "connect", kind: "bdc", visual: "tower", name: "SAP BDC Connect", subtitle: "Microsoft · Databricks · Snowflake", x: 360, y: 236, z: 2, capacity: 3, service: 3, color: "#3f6572", zone: "platform" },
-    { id: "objectstore", kind: "data", visual: "silo", name: "SAP Object Store", subtitle: "SAP and custom data products", x: 528, y: 94, z: 2, capacity: 5, service: 3, color: "#5b6382", zone: "platform" },
-    { id: "ecosystem", kind: "bdc", visual: "pavilion", name: "Open Data Ecosystem", subtitle: "Streaming · governance · AI partners", x: 528, y: 236, z: 2, capacity: 4, service: 4, color: "#3d6f68", zone: "platform" },
-    { id: "dataproduct", kind: "data", visual: "crate", name: "SAP Data Products", subtitle: "Robotics · maintenance · quality", x: 696, y: 142, z: 3, capacity: 4, service: 4, color: "#66589c", zone: "platform" },
-    { id: "sac", kind: "consume", visual: "pavilion", name: "SAP Analytics Cloud", subtitle: "BI · planning · simulation outcomes", x: 864, y: 48, z: 4, capacity: 3, service: 4, color: "#1e6d64", zone: "platform" },
-    { id: "intelligentapps", kind: "consume", visual: "pavilion", name: "SAP Intelligent Applications", subtitle: "Industry 4.0 decision workspaces", x: 864, y: 142, z: 4, capacity: 3, service: 3, color: "#326f72", zone: "platform" },
-    { id: "joule", kind: "consume", visual: "robot", name: "Joule Agents", subtitle: "Plan · dispatch · supervise physical work", x: 864, y: 236, z: 4, capacity: 3, service: 3, color: "#324c68", zone: "platform" },
-    { id: "aIudit", kind: "audit", visual: "gate", name: "Governance & Safety Gate", subtitle: "Human approval · evidence · release policy", x: 864, y: 330, z: 3, capacity: 2, service: 2, color: "#814b5b", zone: "platform" }
-  ],
-  edges: [
-    ["source-s4", "cockpit"], ["source-file", "cockpit"], ["source-external", "cockpit"],
-    ["cockpit", "datasphere"], ["cockpit", "bw"], ["cockpit", "connect"], ["connect", "ecosystem"],
-    ["datasphere", "objectstore"], ["bw", "objectstore"], ["objectstore", "dataproduct"], ["ecosystem", "dataproduct"],
-    ["dataproduct", "sac"], ["dataproduct", "intelligentapps"], ["dataproduct", "joule"], ["dataproduct", "aIudit"], ["aIudit", "sac"]
+export const operationsScope = {
+  name: "SAP Autonomous Operations Twin", version: MODEL_VERSION,
+  externalIntegrations: ["SAP BDC Connect", "Joule"],
+  connectionRoles: ["BDC_CONNECT", "JOULE"],
+  mode: "simulation", liveTenantAccess: false, productionCommands: false,
+  boundaries: {
+    data: "BDC Connect shares governed data products with compatible platforms; it is not a universal transactional or robot-control API.",
+    coordination: "Joule domain assistants depend on licensed applications and supported tenant interfaces. This demo simulates their coordination; it does not call Joule.",
+    physical: "Robots, sensors, control protocols and GRAFCET commands are local simulations, not external connections.",
+    orchestration: "Autonomous Orchestration is a demo scenario aligned to SAP Supply Chain Orchestration, not a claim of an identically named SAP product."
+  },
+  assistants: ["Asset and Service Assistant", "Manufacturing Assistant", "Planning Assistant", "Product Design Assistant", "Logistics Assistant"],
+  sources: [
+    "https://news.sap.com/2026/05/more-autonomous-supply-chain/",
+    "https://www.sap.com/topics/events/sapphire/innovation-news-guide-2026",
+    "https://help.sap.com/docs/business-data-cloud/sap-business-data-cloud-connect/working-with-data-products-in-sap-business-data-cloud-connect?locale=en-US"
   ]
 };
 
-export function cloneModel(model = defaultModel) {
-  return structuredClone(model);
-}
+export const defaultModel = {
+  id: "sap-autonomous-operations", name: "SAP Autonomous Operations · BDC Connect + Joule",
+  version: MODEL_VERSION, layout: "platform-campus",
+  nodes: [
+    platformNode("connect", "bdc", "tower", "SAP BDC Connect", "Governed data sharing · connection not configured", 24, 96, "connect", "#37677a"),
+    platformNode("operation-context", "data", "silo", "Governed Operations Context", "Local shared-product samples · contracts · lineage", 204, 96, "context", "#596781"),
+    platformNode("joule", "agent", "robot", "Joule", "Domain assistant coordination · simulated, not connected", 384, 96, "agent", "#43577d"),
+    platformNode("asset-management", "bdc", "processMachine", "Autonomous Asset Management", "Asset and Service Assistant · condition to maintenance", 24, 276, "asset-management", "#49756e"),
+    platformNode("manufacturing", "bdc", "cobotCell", "Autonomous Manufacturing", "Manufacturing Assistant · adaptive production and quality", 244, 276, "manufacturing", "#4c667e"),
+    platformNode("orchestration", "bdc", "pavilion", "Autonomous Orchestration", "Planning and Product Design assistants · cross-domain recovery", 464, 276, "orchestration", "#68708b"),
+    platformNode("logistics", "bdc", "loadingDock", "Autonomous Logistics", "Logistics Assistant · warehouse task coordination", 684, 276, "logistics", "#52736b"),
+    platformNode("approval", "audit", "gate", "Human Approval", "Local assisted-mode execution gate · no live commands", 594, 96, "approval", "#8b6b48"),
+    platformNode("evidence", "audit", "inspectionCell", "Execution Evidence", "Local event trace · simulated outcomes · export", 864, 96, "evidence", "#735b79")
+  ],
+  edges: [["connect", "operation-context"], ["operation-context", "joule"], ["joule", "approval"],
+    ...["asset-management", "manufacturing", "orchestration", "logistics"].flatMap(id => [["approval", id], [id, "evidence"]])]
+};
 
+export function cloneModel(model = defaultModel) { return structuredClone(model); }
 export function normalizeModel(model) {
   const next = cloneModel(model);
-  next.nodes = next.nodes.map((node) => ({
-    ...node,
-    visual: node.visual || visualFor(node.kind),
-    x: Number.isFinite(node.x) ? node.x : 100,
-    y: Number.isFinite(node.y) ? node.y : 100,
+  next.nodes = next.nodes.map(node => ({
+    ...node, visual: node.visual || ({ source: "warehouse", bdc: "tower", data: "crate", consume: "pavilion", audit: "gate", agent: "robot" }[node.kind] || "crate"),
+    x: Number.isFinite(node.x) ? node.x : 100, y: Number.isFinite(node.y) ? node.y : 100,
     z: Number.isFinite(node.z) ? node.z : 0,
-    capacity: Math.max(1, Math.floor(node.capacity || 1)),
-    service: Math.max(1, Number(node.service || 1))
+    capacity: Math.max(1, Math.floor(node.capacity || 1)), service: Math.max(0.01, Number(node.service || 1))
   }));
   next.edges = Array.isArray(next.edges) ? next.edges : [];
   return next;
 }
-
-function visualFor(kind) {
-  return { source: "warehouse", bdc: "tower", data: "crate", consume: "pavilion", audit: "gate", agent: "robot" }[kind] || "crate";
-}
-
-export const route = ["source-s4", "cockpit", "datasphere", "dataproduct", "aIudit", "sac"];
+export const route = ["connect", "operation-context", "joule", "approval", "asset-management", "evidence"];

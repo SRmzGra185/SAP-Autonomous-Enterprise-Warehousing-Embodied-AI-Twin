@@ -23,3 +23,20 @@ body{min-width:760px;background:#eef2f5;color:var(--ink);font-size:13px}
 @media(max-width:1300px){.workspace-grid{grid-template-columns:175px minmax(0,1fr)}.inspector-panel{display:none}.brand-copy{max-width:230px}.top-actions{gap:0}.top-actions button,.top-actions a{padding:7px 8px}.safety-pill{display:none}.mission-toolbar{gap:7px}.mission-toolbar select{max-width:260px}.model-stage{height:530px}.lower-grid{grid-template-columns:1fr}.mesh-label{max-width:106px}.mesh-label strong{font-size:8px}}
 @media(max-width:950px){.workspace-grid{grid-template-columns:1fr}.library-panel{display:none}.app-shell{padding:12px}.topbar{padding:12px}.top-actions{flex-wrap:wrap}.mission-readout{gap:12px}.robot-lab-grid{grid-template-columns:1fr}.scene-zone-labels i{display:none}.mesh-label{max-width:112px}.sap-form-grid{grid-template-columns:170px minmax(0,1fr)}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}.mesh-label{transition:none}}
+
+/* Scoped autonomous-operations workspaces. Existing engine layout is unchanged. */
+.operations-ui .operations-workspace{color:#355971;line-height:1.6;font-size:12px;padding:4px;overflow-wrap:anywhere}
+.operations-ui .operations-workspace h4{font-size:15px;margin:12px 0 8px}
+.operations-ui .operations-notice{padding:10px 14px;border:1px solid #d5e4ed;border-radius:7px;background:#eef6fb;color:#526f85;font-size:11px;line-height:1.5}
+.operations-ui .console-panel>.operations-notice{margin:0 18px 12px}
+.operations-ui .operations-actions{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.operations-ui .operations-workspace textarea{display:block;width:100%;box-sizing:border-box;background:#fff;color:#284f6b;border:1px solid #bcd3e2;border-radius:7px;padding:10px;margin-top:6px;resize:vertical}
+.operations-ui .operations-workspace pre,.operations-ui .operations-scope pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto;padding:12px;background:#edf4f8;color:#36566c;border-radius:7px;font-size:11px}
+.operations-ui .operations-workspace dt{font-weight:700;margin-top:10px}
+.operations-ui .operations-workspace dd{margin:4px 0 10px}
+.operations-ui .operations-error{color:#a53c37}
+.operations-ui .operations-scope{margin:0 22px 18px;color:#496c83;font-size:12px}
+.operations-ui .operations-scope summary{cursor:pointer;padding:10px 0}
+.operations-ui #connections-settings{min-height:70px;scroll-margin-top:24px}
+.operations-ui .library-item small{white-space:normal;line-height:1.4}
+.operations-ui #event-timeline{scroll-margin-top:24px}
