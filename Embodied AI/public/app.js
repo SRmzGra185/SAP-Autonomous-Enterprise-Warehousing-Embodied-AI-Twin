@@ -2,6 +2,7 @@ import { createMeshWorld } from "./webgl-world.js";
 import { createExecutionUI } from "./execution-ui.js";
 import { initConnectionsUI } from "./connections-ui.js";
 import { initExperimentsUI } from "./experiments-ui.js";
+import { initJouleChat } from "./joule-chat.js";
 
 const svgNS = "http://www.w3.org/2000/svg";
 const state = {
@@ -89,7 +90,7 @@ function renderModel() {
   $("#model-name").textContent = state.model.name;
   $("#model-version").textContent = `v${state.model.version}`;
   const svg = $("#model-canvas"), nodeWidth = modelNodeWidth(), campusLayout = state.model.layout?.includes("campus");
-  svg.setAttribute("viewBox", "0 0 1120 650");
+  svg.setAttribute("viewBox", `0 0 1120 ${Math.max(650, ...state.model.nodes.map(node => node.y + 115))}`);
   svg.replaceChildren();
   const markerDefs = document.createElementNS(svgNS, "defs");
   const marker = document.createElementNS(svgNS, "marker");
@@ -104,6 +105,16 @@ function renderModel() {
     svg.appendChild(line);
   }
 
+  for (const relation of state.model.relationships || []) {
+    if (relation.type !== "coordinates") continue;
+    const from = nodeById(relation.from), to = nodeById(relation.to);
+    if (!from || !to) continue;
+    const line = document.createElementNS(svgNS, "line");
+    line.setAttribute("x1", from.x + nodeWidth / 2); line.setAttribute("y1", from.y + 68);
+    line.setAttribute("x2", to.x + nodeWidth / 2); line.setAttribute("y2", to.y);
+    line.setAttribute("stroke", "#a15bea"); line.setAttribute("stroke-width", "3"); line.setAttribute("stroke-dasharray", "8 5");
+    svg.appendChild(line);
+  }
   for (const node of state.model.nodes) {
     const group = document.createElementNS(svgNS, "g");
     group.setAttribute("class", `node-group${state.selectedId === node.id ? " selected" : ""}`); group.dataset.id = node.id;
@@ -190,7 +201,7 @@ function dragMove(event) {
   const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(svg.getScreenCTM().inverse());
   const node = nodeById(state.dragId);
   node.x = Math.max(8, Math.min(1100 - modelNodeWidth(), point.x - modelNodeWidth() / 2));
-  node.y = Math.max(8, Math.min(570, point.y - 34));
+  node.y = Math.max(8, Math.min(Math.max(570, ...state.model.nodes.map(item => item.y + 45)), point.y - 34));
   renderModel();
 }
 
@@ -211,7 +222,7 @@ const domainScenarios = {
 const objectDefinitions = Object.fromEntries([
   ["connect", "SAP BDC Connect", "Mock shared data products and contracts", "bdc", "tower", "#40566a"],
   ["context", "Governed Operations Context", "Local operational context for the selected scenario", "data", "crate", "#66589c"],
-  ["agent", "Joule", "NOT CONNECTED · local bounded mock planning", "agent", "robot", "#1e6d64"],
+  ["agent", "Joule", "NOT CONNECTED · local bounded mock planning", "agent", "joule", "#a15bea"],
   ["asset-management", "Asset Management", "Local autonomous inspection scenario", "process", "warehouse", "#31506a"],
   ["manufacturing", "Manufacturing", "Local adaptive assembly scenario", "process", "tower", "#40566a"],
   ["orchestration", "Orchestration", "Local autonomous orchestration scenario", "process", "tower", "#66589c"],
@@ -244,7 +255,7 @@ function interfaceContent(tool) {
   if (tool === "agent") content = `
     <h4>Joule · NOT CONNECTED</h4><p>This action starts a bounded local mock plan. It does not call Joule or execute its recommendations.</p>
     <label for="workspace-agent-goal">Operations goal</label><textarea id="workspace-agent-goal" maxlength="2000" rows="3">${escapeHtml($("#agent-goal").value)}</textarea>
-    <div class="operations-actions">${operationButton("agent-start", "Start local mock plan")}${operationButton("trace", "Open recorded trace")}${operationButton("connections", "Connection settings")}</div>
+    <div class="operations-actions">${operationButton("joule-chat", "Open chat & reusable routines")}${operationButton("agent-start", "Start local mock plan")}${operationButton("trace", "Open recorded trace")}${operationButton("connections", "Connection settings")}</div>
     <h4>Latest local plan</h4><pre id="workspace-agent-plan">${escapeHtml(state.agentPlan ? JSON.stringify(state.agentPlan, null, 2) : "No completed local plan yet.")}</pre>`;
   if (tool === "approval") content = `
     <h4>Assisted execution</h4><p>Assisted mode pauses before each simulated action. Approve or reject the actual pending request in the twin. Live execution remains locked; shadow uses synthetic inputs.</p>
@@ -270,10 +281,7 @@ function toolForNode(node) {
 
 function openObjectSubmenu(tool, sourceNode = null) {
   if (!objectDefinitions[tool]) tool = "physical";
-  if (domainScenarios[tool]) {
-    if (state.robotRunning && state.activeRobotScenario?.id !== domainScenarios[tool]) return showToast("Stop the active routine before changing domains.");
-    selectRobotScenario(domainScenarios[tool]);
-  }
+  // Inspecting a domain must not replace the active full-circle case.
   const definition = { ...objectDefinitions[tool], ...(sourceNode || {}) };
   const profile = workspaceProfile(tool);
   state.pendingTool = tool; state.interiorTool = tool; state.previousView = state.mode;
@@ -308,6 +316,7 @@ async function handleOperation(action) {
     await runAgentTask();
   }
   if (action === "trace") reveal(".console-panel");
+  if (action === "joule-chat") reveal("#joule-chat");
   if (action === "timeline") reveal("#event-timeline");
   if (action === "export") $("#mission-export").click();
   if (action === "audit") {
@@ -462,6 +471,11 @@ function consumeEvent(event) {
   if (event.type === "sensor_sample") {
     $("#robot-sensor").textContent = `${event.source}: ${event.value}`;
   }
+  if (event.type === "shelf_exception") {
+    logLine("Shelf exception", `${event.caseContext.sku}: ${event.rackState}. No material dispatch; resolve the shelf condition before retrying.`, true);
+    $("#model-status").textContent = `Stopped · ${event.rackState}`;
+  }
+  if (event.type === "resource_proposal") logLine("Demo resource selection", `${event.proposal.kind}: ${event.proposal.selected?.name || "NO FEASIBLE RESOURCE"} · synthetic candidates, human review required`);
   if (event.type === "robot_command") {
     const status = event.disposition === "approved_simulation" ? "human approved · simulated" : event.disposition === "shadow_mock" ? "shadow · synthetic inputs" : "simulated";
     $("#robot-command").textContent = `${event.command} · ${status}`;
@@ -515,7 +529,7 @@ function watchJob(jobId, endpoint) {
       if (type === "connection_decision") showToast(payload.decision.allowed ? "Dry-run adapter permitted." : "Adapter denied by safety policy.");
     });
   });
-  for (const type of ["routine_transfer", "approval_required", "approval_resolved", "approval_expired", "job_cancelled"]) source.addEventListener(type, (event) => {
+  for (const type of ["routine_transfer", "approval_required", "approval_resolved", "approval_expired", "job_cancelled", "shelf_exception", "resource_proposal"]) source.addEventListener(type, (event) => {
     const payload = JSON.parse(event.data); if (payload.sequence <= lastSequence) return; lastSequence = payload.sequence;
     consumeEvent(payload);
     if (type === "job_cancelled") { source.close(); state.sources.delete(jobId); }
@@ -648,10 +662,14 @@ function selectRobotScenario(id) {
   let kpiPanel = $("#routine-kpi-profile");
   if (!kpiPanel) { kpiPanel = document.createElement("details"); kpiPanel.id = "routine-kpi-profile"; kpiPanel.className = "operations-scope"; $("#grafcet-detail").after(kpiPanel); }
   kpiPanel.innerHTML = `<summary>KPI instrumentation · ${escapeHtml(scenario.domain)}</summary><p>Required inputs, not measured results. Use Industrial timing experiments for calculations supported by supplied data.</p><ul>${(scenario.kpiProfile?.metrics || []).map(metric => `<li><strong>${escapeHtml(metric.name)}</strong>: ${escapeHtml(metric.definition)}<br><small>Requires: ${escapeHtml(metric.requiredInputs)}</small></li>`).join("")}</ul>`;
+  let governance = $("#routine-governance-profile");
+  if (!governance) { governance = document.createElement("details"); governance.id = "routine-governance-profile"; governance.className = "operations-scope"; kpiPanel.after(governance); }
+  governance.innerHTML = `<summary>Safety & governance · reference mapping, NOT certification</summary><p>${escapeHtml(scenario.governance?.robotBoundary)}</p><p>${escapeHtml(scenario.governance?.transportBoundary)}</p><ul>${(scenario.governance?.standards || []).map(ref => `<li>${escapeHtml(ref.code)} — ${escapeHtml(ref.purpose)} <a href="${escapeHtml(ref.url)}" target="_blank" rel="noopener noreferrer">Official scope</a></li>`).join("")}</ul><p>Live commands remain blocked. Qualified integrator review and local safety controls are required.</p>`;
   setGrafcetActive(scenario.grafcet.initial);
   $("#robot-sensor").textContent = scenario.sensors.slice(0, 2).join(" + ");
   $("#robot-command").textContent = "routine ready";
   state.executionUI?.select(id);
+  state.jouleChat?.refreshSelection();
 }
 
 function renderRobotLab(scenarios) {
@@ -705,12 +723,15 @@ async function runRobotRoutine() {
   if (state.robotRunning) return;
   const scenario = state.activeRobotScenario;
   if (!scenario) return;
-  const button = $("#run-robot-routine"), payload = { scenarioId: scenario.id, mode: $("#robot-mode").value, cycles: Number($("#robot-cycles").value), speed: Number($("#robot-speed").value) };
+  const caseContext = { sku: $("#case-sku").value, rfidEpc: $("#case-rfid").value, quantity: Number($("#case-quantity").value), destination: $("#case-destination").value, rackState: $("#case-rack-state").value };
+  const button = $("#run-robot-routine"), payload = { scenarioId: scenario.id, mode: $("#robot-mode").value, cycles: Number($("#robot-cycles").value), speed: Number($("#robot-speed").value), caseContext };
   button.disabled = true; button.textContent = "Routine running…";
   state.grafcetVisited = new Set(); state.activeGrafcetTransition = null;
   try {
     if (state.model.activeScenarioId !== scenario.id || !state.model.nodes.some((node) => node.id === scenario.grafcet.steps[0].nodeId)) await loadRobotCell();
     if (state.model.activeScenarioId !== scenario.id) throw new Error("The selected scenario could not be loaded into the twin.");
+    for (const node of state.model.nodes.filter(node => node.visual === "rack")) Object.assign(node, caseContext);
+    renderModel();
     const job = await api("/api/robot-routines", { method: "POST", body: JSON.stringify(payload) });
     state.robotRunning = true;
     state.executionUI?.started(job.jobId);
@@ -722,6 +743,7 @@ async function runRobotRoutine() {
     $(".model-panel").scrollIntoView({ behavior: "smooth", block: "start" });
     logLine("robot lab", `${scenario.name} queued in ${payload.mode} mode as ${job.jobId}`);
     watchJob(job.jobId, job.events);
+    return job;
   } catch (error) {
     button.disabled = false; button.textContent = "Run routine";
     state.meshWorld?.setFlowState({ running: false });
@@ -797,7 +819,7 @@ async function boot() {
   $("#edit-toggle").classList.toggle("active", state.editMode);
   $("#edit-toggle").innerHTML = `<span></span> ${state.editMode ? "EDIT MODE" : "VIEW MODE"}`;
   state.model = await api("/api/model");
-  state.executionUI = createExecutionUI({ api, getModel: () => state.model, getWorld: () => state.meshWorld, getScenario: () => state.activeRobotScenario, run: runRobotRoutine, selectScenario: selectRobotScenario, canApprove: state.session.permissions.approve });
+  state.executionUI = createExecutionUI({ api, getModel: () => state.model, getWorld: () => state.meshWorld, getScenario: () => state.activeRobotScenario, run: runRobotRoutine, selectScenario: selectRobotScenario, inspectNode: node => openObjectSubmenu(toolForNode(node), node), canApprove: state.session.permissions.approve });
   state.meshWorld = createMeshWorld($("#webgl-world"), { onFrame: (frame) => state.executionUI.frame(frame), onSelect: (id) => { const node = nodeById(id); state.selectedId = id; renderModel(); renderInspector(); if (node) openObjectSubmenu(toolForNode(node), node); } });
   state.interiorWorld = createMeshWorld($("#interior-canvas"), { deepDive: true });
   renderModel(); renderInspector();
@@ -870,6 +892,13 @@ async function boot() {
   catch (error) { $("#connections-settings").textContent = `Connection settings unavailable: ${error.message}`; }
   try { await initExperimentsUI({ api, getModel: () => state.model }); }
   catch (error) { $("#industrial-experiments").textContent = `Industrial experiments unavailable: ${error.message}`; }
+  state.jouleChat = initJouleChat({ api, getScenario: () => state.activeRobotScenario, runRecipe: async workflow => {
+    if (state.robotRunning) throw new Error("Finish or stop the current routine.");
+    selectRobotScenario(workflow.scenarioId);
+    $("#robot-mode").value = workflow.mode; $("#robot-cycles").value = workflow.cycles; $("#robot-speed").value = workflow.speed;
+    for (const [key, id] of Object.entries({ sku: "case-sku", rfidEpc: "case-rfid", quantity: "case-quantity", destination: "case-destination", rackState: "case-rack-state" })) $("#" + id).value = workflow.caseContext[key];
+    const job = await runRobotRoutine(); if (!job) throw new Error("Routine was not queued.");
+  } });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/service-worker.js").catch(() => {});
 }
 

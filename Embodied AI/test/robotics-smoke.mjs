@@ -38,6 +38,18 @@ try {
   assert.equal((await request("/api/operations-scope")).body.productionCommands, false);
   const foreign = await fetch(origin + "/api/model", { headers: { Origin: "https://untrusted.example" } });
   assert.equal(foreign.status, 403);
+  assert.equal((await request("/api/joule/descriptor")).body.connected, false);
+  const chatInput = { goal: "Prepare an inspection-to-fulfillment demo", scenarioId: "autonomous-orchestration" };
+  const chatJob = await request("/api/joule/chat", chatInput); assert.equal(chatJob.status, 202);
+  const chat = (await completed(chatJob.body.jobId)).result;
+  assert.equal(chat.modelCalls, 0); assert.equal(chat.plan.executed, false);
+  const savedRecipe = await request("/api/recipes/" + chat.recipe.id); assert.equal(savedRecipe.status, 200);
+  assert.equal(savedRecipe.body.recipe.mode, "assisted"); assert.ok(!savedRecipe.body.bat.includes(chatInput.goal));
+  const reusedJob = await request("/api/joule/chat", chatInput);
+  assert.equal((await completed(reusedJob.body.jobId)).result.reused, true);
+  assert.equal((await request("/api/joule/chat", { ...chatInput, mode: "live" })).status, 400);
+  assert.equal((await request("/api/joule/chat", { ...chatInput, goal: "password=private" })).status, 400);
+  assert.equal((await request("/api/recipes/recipe_missing")).status, 404);
 
   for (const scenario of scenarios) {
     const composed = await request(`/api/robot-scenarios/${scenario.id}/compose`, {});

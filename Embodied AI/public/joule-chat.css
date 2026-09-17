@@ -1,0 +1,23 @@
+.joule-chat { background: #f7fafc; border: 1px solid #ccd9e4; border-radius: 14px; padding: 20px; color: #213c52; }
+.joule-chat .joule-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.joule-chat h2 { margin: 0; font-size: 20px; }
+.joule-chat p { font-size: 13px; line-height: 1.6; }
+.joule-chat .joule-badge { background: #fef0cf; color: #744500; padding: 5px 9px; border-radius: 5px; font-size: 11px; font-weight: 700; letter-spacing: .07em; }
+.joule-chat .joule-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 16px 0; }
+.joule-chat label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; }
+.joule-chat input, .joule-chat select, .joule-chat textarea { box-sizing: border-box; width: 100%; min-width: 0; background: #fff; color: #213c52; border: 1px solid #b6c9d8; border-radius: 6px; padding: 9px; font: inherit; }
+.joule-chat textarea { margin-top: 4px; resize: vertical; }
+.joule-chat form > label { margin-top: 16px; }
+.joule-chat button { border: 1px solid #b6c9d8; border-radius: 6px; padding: 9px 12px; background: #fff; color: #254a67; cursor: pointer; font: inherit; font-size: 12px; }
+.joule-chat button[type="submit"] { background: #245b82; color: #fff; border-color: #245b82; }
+.joule-chat button:disabled { opacity: .55; cursor: not-allowed; }
+.joule-chat :focus-visible { outline: 3px solid #347eba; outline-offset: 3px; }
+.joule-chat .joule-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.joule-chat .joule-messages { max-height: 320px; overflow: auto; }
+.joule-chat .joule-message { white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; border-radius: 8px; background: #e9f1f7; }
+.joule-chat .joule-status { color: #365b75; margin-bottom: 0; }
+.joule-chat .joule-recipe-dialog { box-sizing: border-box; width: min(680px, 94vw); max-height: 85vh; overflow: auto; border: 1px solid #b6c9d8; border-radius: 12px; padding: 24px; color: #213c52; background: #f7fafc; }
+.joule-chat .joule-recipe-dialog::backdrop { background: rgb(15 34 48 / 55%); }
+.joule-chat pre { padding: 14px; background: #e9f1f7; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.joule-chat [hidden] { display: none !important; }
+@media (max-width: 480px) { .joule-chat { padding: 14px; } .joule-chat .joule-fields { grid-template-columns: 1fr; } }

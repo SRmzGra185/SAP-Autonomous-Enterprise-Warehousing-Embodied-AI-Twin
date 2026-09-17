@@ -1,4 +1,5 @@
 import { route } from "./domain.mjs";
+import { timingAssumption } from "./timing-assumptions.mjs";
 
 // Durations are seconds PER ENTITY, not SAP routing base quantities. Convert
 // machine/labor standard values, base quantity and operation splits before entry.
@@ -119,7 +120,7 @@ export function calculateObservedKpis(input = {}) {
 
 export function experimentTemplate(model) {
   const ids = [...new Set(experimentRoute(model))];
-  return { version: 1, unit: "seconds", source: "demo", sourceReference: "Synthetic illustrative seconds; replace with locally measured per-entity values.", entityUnit: "order", setupOncePerResource: true, arrivalGapSeconds: 1,
-    nodes: ids.map(nodeId => ({ nodeId, processSeconds: { type: "triangular", min: 1, mode: 2, max: 3 }, setupSeconds: 0, handlingSeconds: 0, travelSeconds: 0, approvalSeconds: 0 })),
+  return { version: 1, unit: "seconds", source: "demo", sourceReference: "UNVALIDATED scenario assumptions, not usual or measured machine times. Per order of one fixed SKU/batch. Physical-node ranges include the whole activity; replace with local timestamps before decisions.", entityUnit: "fixed-SKU order", setupOncePerResource: true, arrivalGapSeconds: model.nodes.some(node => node.layer === "robotics") ? 60 : 1,
+    nodes: ids.map(nodeId => ({ nodeId, processSeconds: timingAssumption(model.nodes.find(node => node.id === nodeId)), setupSeconds: 0, handlingSeconds: 0, travelSeconds: 0, approvalSeconds: 0 })),
     performanceData: { assetDomain: "other", singleSKU: false, plannedProductionSeconds: null, runtimeSeconds: null, idealCycleSeconds: null, totalCount: null, goodCount: null, operatingSeconds: null, repairSeconds: null, failures: null, repairs: null } };
 }

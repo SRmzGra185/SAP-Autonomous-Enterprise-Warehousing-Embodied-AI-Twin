@@ -1,4 +1,5 @@
 import { HttpError } from "./http-utils.mjs";
+import { validateCaseContext } from "./src/routine-context.mjs";
 
 const text = (value, name, max = 120) => {
   if (typeof value !== "string" || !value.trim() || value.length > max || /[<>\u0000-\u001f]/.test(value)) throw new HttpError(400, `${name} is invalid.`, "validation_error");
@@ -19,7 +20,7 @@ export function validateModelInput(body) {
     return {
       ...node, id, name: text(node.name, `nodes[${index}].name`, 100), subtitle: text(node.subtitle || "Operational object", `nodes[${index}].subtitle`, 160),
       kind: oneOf(node.kind, `nodes[${index}].kind`, ["source", "bdc", "data", "consume", "audit", "agent"]),
-      visual: oneOf(node.visual, `nodes[${index}].visual`, ["warehouse", "tower", "reactor", "silo", "crate", "pavilion", "robot", "gate", "posTerminal", "retailShelf", "rack", "mobileManipulator", "safetyZone", "sensorMast", "amr", "cobotCell", "conveyor", "inspectionCell", "loadingDock", "partsFeeder", "assemblyFixture", "torqueStation", "robotDock", "quadruped", "processMachine"]),
+      visual: oneOf(node.visual, `nodes[${index}].visual`, ["warehouse", "tower", "reactor", "silo", "crate", "pavilion", "robot", "joule", "unitree", "gate", "posTerminal", "retailShelf", "rack", "mobileManipulator", "safetyZone", "sensorMast", "amr", "cobotCell", "conveyor", "inspectionCell", "loadingDock", "partsFeeder", "assemblyFixture", "torqueStation", "robotDock", "quadruped", "processMachine"]),
       x: number(node.x, `nodes[${index}].x`, -1000, 2000), y: number(node.y, `nodes[${index}].y`, -1000, 2000), z: number(node.z ?? 0, `nodes[${index}].z`, 0, 20),
       capacity: Math.floor(number(node.capacity, `nodes[${index}].capacity`, 1, 100)), service: number(node.service, `nodes[${index}].service`, 0.01, 1000),
       color: /^#[0-9a-fA-F]{6}$/.test(node.color || "") ? node.color : "#40566a",
@@ -52,6 +53,7 @@ export function validateRobotRoutineInput(body = {}, scenarioIds = []) {
     scenarioId: oneOf(body.scenarioId, "scenarioId", scenarioIds),
     mode: oneOf(body.mode || "simulation", "mode", ["simulation", "shadow", "assisted", "live"]),
     cycles: Math.floor(number(body.cycles ?? 1, "cycles", 1, 20)),
-    speed: number(body.speed ?? 1, "speed", 0.25, 4)
+    speed: number(body.speed ?? 1, "speed", 0.25, 4),
+    caseContext: validateCaseContext(body.caseContext)
   };
 }

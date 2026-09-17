@@ -50,6 +50,27 @@ function extrude(points) {
   for (let i = 0; i < points.length; i++) { const a = points[i], b = points[(i + 1) % points.length]; quad(out, [...a, -.5], [...b, -.5], [...b, .5], [...a, .5]); }
   return out;
 }
+// Star-shaped (concave) profile: center-fan caps, not a convex polygon fan.
+// Four inset/extruded rings give the silhouette real sidewalls and bevels.
+function jouleStarMesh() {
+  const outline = [];
+  for (let arm = 0; arm < 4; arm++) {
+    const angle = arm * Math.PI / 2, rotate = ([x, y]) => [x * Math.cos(angle) - y * Math.sin(angle), x * Math.sin(angle) + y * Math.cos(angle)];
+    for (let i = 0; i < 8; i++) {
+      const t = i / 8, u = 1 - t;
+      outline.push(rotate([.5 * u * u + .12 * u * t, .12 * u * t + .5 * t * t]));
+    }
+  }
+  const rings = [[-.5, .88], [-.32, 1], [.32, 1], [.5, .88]].map(([z, scale]) => outline.map(([x, y]) => [x * scale, y * scale, z]));
+  const out = [], n = outline.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    triangle(out, [0, 0, -.5], rings[0][j], rings[0][i]);
+    triangle(out, [0, 0, .5], rings[3][i], rings[3][j]);
+    for (let r = 0; r < 3; r++) quad(out, rings[r][i], rings[r][j], rings[r + 1][j], rings[r + 1][i]);
+  }
+  return out;
+}
 export function meshFor(shape) {
   if (cache.has(shape)) return cache.get(shape);
   let data;
@@ -59,7 +80,8 @@ export function meshFor(shape) {
       const a = i / 48 * TAU, b = (i + 1) / 48 * TAU;
       triangle(data, [0, 0, 0], [.5 * Math.cos(b), 0, .5 * Math.sin(b)], [.5 * Math.cos(a), 0, .5 * Math.sin(a)]);
     }
-  } else if (shape === 'box') data = loft([rectangleRing(-.5, .5, 0), rectangleRing(.5, .5, 0)]);
+  } else if (shape === 'jouleStar') data = jouleStarMesh();
+  else if (shape === 'box') data = loft([rectangleRing(-.5, .5, 0), rectangleRing(.5, .5, 0)]);
   else if (shape === 'bevel') data = loft([rectangleRing(-.5, .455, .06), rectangleRing(-.42), rectangleRing(.42), rectangleRing(.5, .455, .06)]);
   else if (shape === 'chassis') data = loft([rectangleRing(-.5, .4, .12), rectangleRing(-.32, .5, .14), rectangleRing(.18, .5, .14), rectangleRing(.5, .41, .12)]);
   else if (shape === 'bin') data = loft([rectangleRing(-.5, .4), rectangleRing(.4), rectangleRing(.5), rectangleRing(.5, .43, .08), rectangleRing(-.36, .34, .06)], true, true);
@@ -138,7 +160,62 @@ export function amrParts(p, loaded = true) {
   return out;
 }
 
-export function isArticulated(visual) { return ['cobotCell', 'mobileManipulator', 'robot', 'conveyor', 'torqueStation', 'inspectionCell', 'assemblyFixture', 'sensorMast', 'quadruped'].includes(visual); }
+export function isArticulated(visual) { return ['cobotCell', 'mobileManipulator', 'robot', 'conveyor', 'torqueStation', 'inspectionCell', 'assemblyFixture', 'sensorMast', 'quadruped', 'unitree'].includes(visual); }
+export const JOULE_CONCEPT_NOTICE = 'Joule-inspired 3D concept; not an official or certified SAP brand asset.';
+export const UNITREE_CONCEPT_NOTICE = 'Generic Unitree-style inspection quadruped; no specific model or payload capability asserted.';
+export function jouleParts() {
+  const out = [
+    part('bevel', [0, .07, 0], [1.78, .14, 1.06], '#292039', 0, 0, MATERIAL.metal),
+    part('bevel', [0, .155, 0], [1.62, .03, .92], '#9a70ed', 0, .2, MATERIAL.metal),
+    part('bevel', [0, .22, 0], [1.12, .1, .54], '#403351', 0, 0, MATERIAL.metal),
+    // Discreet structural stems land both freestanding stars on the plinth.
+    part('bevel', [-.24, .43, -.08], [.055, .38, .07], '#64507d', 0, 0, MATERIAL.metal),
+    part('bevel', [.51, .82, -.09], [.035, 1.14, .045], '#64507d', 0, 0, MATERIAL.metal)
+  ];
+  for (const [position, size] of [[[-.24, 1.09, 0], [1.27, 1.42, .24]], [[.51, 1.72, .035], [.61, .69, .19]]]) {
+    out.push({ ...part('jouleStar', position, size, '#a663f2', 0, .2, MATERIAL.metal), gradient: ['#5268ed', '#db84f5'], concept: JOULE_CONCEPT_NOTICE });
+  }
+  return out;
+}
+function unitreeBody() {
+  const p = { base: '#333b43', dark: '#111820', trim: '#bbc4cd', metal: '#7f8c97', glass: '#87afc6', accent: '#a6d3e8' };
+  const { out, add, box } = builder(p);
+  add('chassis', [0, .78, 0], [1.02, .3, .46], p.dark, 0, 0, MATERIAL.metal);
+  add('vessel', [0, .865, 0], [.97, .17, .44], p.base, 0, 0, MATERIAL.metal);
+  box([-.05, .945, 0], [.55, .03, .29], p.trim);
+  // Rounded muzzle, forward-facing stereo lenses and a dedicated lidar turret.
+  add('vessel', [.52, .79, 0], [.36, .29, .37], p.base, 0, 0, MATERIAL.metal);
+  box([.663, .79, 0], [.045, .15, .29], p.dark);
+  for (const z of [-.09, .09]) {
+    add('cylinder', [.69, .815, z], [.081, .027, .081], p.trim, Math.PI / 2, 0, MATERIAL.metal, Math.PI / 2);
+    add('cylinder', [.708, .815, z], [.055, .015, .055], p.glass, Math.PI / 2, .22, MATERIAL.glass, Math.PI / 2);
+  }
+  add('cylinder', [.37, .972, 0], [.2, .07, .2], p.dark);
+  add('cylinder', [.37, 1.018, 0], [.165, .027, .165], p.glass, 0, .15, MATERIAL.glass);
+  for (const z of [-.241, .241]) for (let x = -.29; x < .2; x += .09) box([x, .79, z], [.043, .085, .016], '#0b1117');
+  for (const x of [-.36, .36]) for (const z of [-.28, .28]) add('joint', [x, .72, z], [.2, .11, .2], p.trim, 0, 0, MATERIAL.metal, Math.PI / 2);
+  return out;
+}
+function unitreeLegs(progress) {
+  const out = [], t = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
+  for (const x of [-.36, .36]) for (const z of [-.3, .3]) {
+    const phase = t * TAU * 2 + (x * z > 0 ? 0 : Math.PI), envelope = Math.sin(Math.PI * t);
+    const hip = [x, .72, z], foot = [x + .035 + .14 * Math.sin(phase) * envelope, .045 + .12 * Math.max(0, Math.sin(phase)) * envelope, z];
+    // Equal rigid segments, solved in the sagittal plane; no stretching shins.
+    const dx = foot[0] - hip[0], dy = foot[1] - hip[1], d = Math.hypot(dx, dy), h = Math.sqrt(Math.max(0, .39 ** 2 - d * d / 4));
+    const knee = [(hip[0] + foot[0]) / 2 - dy / d * h, (hip[1] + foot[1]) / 2 + dx / d * h, z];
+    out.push(beam(hip, knee, .095, '#aeb9c4', 'link'), beam(knee, foot, .061, '#252f39', 'link'));
+    out.push(part('joint', knee, [.14, .09, .14], '#171f28', 0, 0, MATERIAL.metal, Math.PI / 2));
+    out.push(part('bevel', foot, [.15, .09, .115], '#11171e'));
+  }
+  return out;
+}
+export function unitreeParts(progress = 0) { return [...unitreeBody(), ...unitreeLegs(progress)]; }
+// Data flows do not imply physical transport. Only an active quadruped walks.
+export function flowCarrierParts(visual, progress = 0) {
+  if (visual === 'unitree' || visual === 'quadruped') return unitreeParts(progress);
+  return [part('bevel', [0, .22, 0], [.15, .15, .15], '#a7eee9', Math.PI / 4, .6, MATERIAL.glow)];
+}
 // Explicit one-shot keyframe choreography; never driven by a wall-clock sine wave.
 export function articulationParts(visual, p, progress = 0) {
   const { out, add, box, rod } = builder(p), t = Math.max(0, Math.min(1, progress));
@@ -181,26 +258,18 @@ export function articulationParts(visual, p, progress = 0) {
     add('bevel', [0, 1.66, 0], [.37, .24, .29], p.trim, -.75 + t * 1.5, 0, MATERIAL.metal);
     const yaw = -.75 + t * 1.5;
     out.push(...transformParts([part('cylinder', [0, 1.66, .17], [.13, .06, .13], p.glass, 0, .35, MATERIAL.glass, Math.PI / 2)], [0, 0, 0], yaw));
-  } else if (visual === 'quadruped') {
-    for (const x of [-.4, .4]) for (const z of [-.3, .3]) {
-      const shift = .1 * Math.sin(t * TAU * 2 + (x * z > 0 ? 0 : Math.PI));
-      const hip = [x, .69, z], knee = [x + .16 + shift, .36, z], foot = [x - .08, .06, z];
-      out.push(beam(hip, knee, .09, p.trim, 'link'), beam(knee, foot, .065, p.dark, 'link'));
-      add('joint', knee, [.13, .12, .13], p.base); box(foot, [.16, .1, .13], '#17242e');
-    }
+  } else if (visual === 'quadruped' || visual === 'unitree') {
+    out.push(...unitreeLegs(t));
   }
   return out;
 }
 
 export function objectParts(visual, p) {
   const { out, add, box, rod, pad, screen, beacon } = builder(p);
+  if (visual === 'joule') return jouleParts();
+  if (visual === 'unitree' || visual === 'quadruped') return unitreeBody();
   if (visual === 'amr') return amrParts(p);
   if (visual === 'mobileManipulator') { out.push(...amrParts(p, false)); add('cylinder', [-.38, .66, 0], [.3, .21, .3], p.trim); return out; }
-  if (visual === 'quadruped') {
-    add('chassis', [0, .79, 0], [1.13, .32, .63], p.base); box([.59, .84, 0], [.19, .2, .43], p.dark);
-    for (const z of [-.13, .13]) add('cylinder', [.7, .84, z], [.08, .035, .08], p.glass, Math.PI / 2, .3, MATERIAL.glass, Math.PI / 2);
-    add('cylinder', [-.3, 1.02, 0], [.19, .13, .19], p.trim); return out;
-  }
   pad();
   if (visual === 'rack' || visual === 'retailShelf') {
     // Flanged steel uprights, bolted footplates, cross-braces and open shelf bays.

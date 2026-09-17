@@ -39,7 +39,7 @@ export function createApprovalGate({ emit, signal, timeoutMs = 300_000 }) {
       if (!pending || pending.public.approvalId !== input.approvalId) throw new HttpError(409, "This approval is no longer pending.", "approval_stale");
       if (signal?.aborted) { abort(); throw new HttpError(409, "Routine cancelled.", "approval_stale"); }
       if (Date.now() >= Date.parse(pending.public.expiresAt)) { finish(new Error("Approval expired.")); throw new HttpError(409, "Approval expired.", "approval_stale"); }
-      const actionBinding = Object.fromEntries(["approvalId", "scenarioId", "stepId", "transitionId", "nextStepId", "cycle", "nodeId", "command"].filter(key => pending.public[key] !== undefined).map(key => [key, pending.public[key]]));
+      const actionBinding = Object.fromEntries(["approvalId", "scenarioId", "stepId", "transitionId", "nextStepId", "cycle", "nodeId", "command", "intendedActor", "caseContext", "resourceProposal"].filter(key => pending.public[key] !== undefined).map(key => [key, pending.public[key]]));
       const review = input.decision === "approve" ? validateExceptionReview({ exceptionFingerprint: input.exceptionFingerprint, physicalResolvability: input.physicalResolvability }, actionBinding) : { actionBinding };
       const decision = { ...structuredClone(pending.public), ...review, decision: input.decision, approvedBy: principal.userId, decidedAt: new Date().toISOString(), productionCommands: false, dispatched: false };
       try { emit({ type: "approval_resolved", ...structuredClone(decision) }); }

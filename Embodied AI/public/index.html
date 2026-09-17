@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/workspace.css" />
     <link rel="stylesheet" href="/exception-ui.css" />
     <link rel="stylesheet" href="/experiments-ui.css" />
+    <link rel="stylesheet" href="/joule-chat.css" />
   </head>
   <body class="operations-ui">
     <header class="topbar">
@@ -77,6 +78,14 @@
             <div class="robot-section-heading"><div><span class="eyebrow">SEQUENTIAL FUNCTION CHART</span><strong id="grafcet-title">Select a robot scenario</strong></div><span class="grafcet-state" id="grafcet-state">S0</span></div>
             <svg id="grafcet-diagram" viewBox="0 0 1000 210" role="img" aria-label="Interactive GRAFCET robot routine"></svg>
             <div class="grafcet-detail" id="grafcet-detail"><strong>Active step</strong><span>Load a scenario to inspect actions and transition receptivities.</span></div>
+            <fieldset class="robot-controls" id="case-context">
+              <legend>Material context · synthetic demo identifiers</legend>
+              <label>SKU<input id="case-sku" maxlength="80" value="DEMO-PUMP-KIT" /></label>
+              <label>RFID EPC (hex)<input id="case-rfid" maxlength="64" value="3034257BF400B78000000001" /></label>
+              <label>Quantity<input id="case-quantity" type="number" min="1" max="10000" value="4" /></label>
+              <label>Destination<input id="case-destination" maxlength="80" value="DEMO-RECEIVING-01" /></label>
+              <label>Rack condition<select id="case-rack-state"><option value="available">Available</option><option value="empty">Empty shelf</option><option value="blocked">Blocked shelf</option><option value="replenishment_delayed">Replenishment delayed</option></select></label>
+            </fieldset>
             <div class="robot-controls">
               <label>Execution mode<select id="robot-mode"><option value="simulation">Simulation</option><option value="shadow">Shadow — synthetic inputs only</option><option value="assisted">Assisted — approval required</option><option value="live">Live — locked by Safety Gate</option></select></label>
               <label>Cycles<input id="robot-cycles" type="number" min="1" max="20" value="1" /></label>
@@ -97,6 +106,7 @@
         </div>
       </section>
 
+      <section class="panel" id="joule-chat" aria-label="Joule-inspired local routine assistant"></section>
       <section class="panel" id="industrial-experiments" aria-label="Industrial timing and Monte Carlo laboratory"></section>
       <section class="integration-panel panel" id="operations-connections">
         <div class="panel-heading"><div><span class="eyebrow">SAPPHIRE AUTONOMOUS OPERATIONS SCOPE</span><h2>SAP BDC Connect & Joule</h2></div><span class="safety-copy">Only two external connections · local scenarios are not native SAP apps</span></div>

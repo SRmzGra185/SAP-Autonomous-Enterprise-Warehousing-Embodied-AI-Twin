@@ -18,12 +18,14 @@ import { composeRobotTwin, robotScenarios, robotScenarioById, robotScenarioIds, 
 import { createApprovalGate } from "./src/approvals.mjs";
 import { describeExceptionControls, validateResolutionProof } from "./src/exception-resolution.mjs";
 import { experimentTemplate, validateExperimentProfile } from "./src/industrial-timing.mjs";
+import { descriptor as recipeDescriptor, validateRequest as validateChatRequest, buildPlan, buildRecipe, exportBat } from "./src/routine-library.mjs";
 
 assertSecureConfiguration();
 const __dirname = path.dirname(fileURLToPath(import.meta.url)), publicDir = path.join(__dirname, "public");
 const jobs = new Map(), tenantModels = new Map(), tenantProfiles = new Map(), auditTrail = [auditEntry("server_started", { result: "desktop-safe", productionWrites: false })];
 const limit = createRateLimiter(config.rateLimit), adapterIds = adapters.map((adapter) => adapter.id);
 const runtime = operationsRuntimeDescriptor(config);
+const recipes = new Map();
 const challengeScenario = robotScenarioById("autonomous-inspection");
 const challengeModel = composeRobotTwin(defaultModel, defaultModel, challengeScenario);
 
@@ -93,7 +95,34 @@ async function routeRequest(req, res) {
   if (req.method === "GET" && pathname === "/api/config") return json(res, 200, publicConfig(), origin);
 
   if (pathname.startsWith("/api/")) {
-    const principal = await authenticate(req, config), agentRoute = pathname === "/api/agent/tasks", rate = limit(`${rateKey(req, principal)}:${agentRoute ? "agent" : "api"}`, agentRoute ? config.rateLimit.agentMax : config.rateLimit.max);
+    const principal = await authenticate(req, config), agentRoute = ["/api/agent/tasks", "/api/joule/chat"].includes(pathname), rate = limit(`${rateKey(req, principal)}:${agentRoute ? "agent" : "api"}`, agentRoute ? config.rateLimit.agentMax : config.rateLimit.max);
+    if (req.method === "GET" && pathname === "/api/joule/descriptor") return json(res, 200, recipeDescriptor(), origin, rate);
+    if (req.method === "POST" && pathname === "/api/joule/chat") {
+      if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
+      const input = validateChatRequest(await readJson(req, config));
+      const job = launchJob("local_recipe_plan", principal, async emit => {
+        const plan = buildPlan(input), recipe = buildRecipe(input);
+        const cacheKey = crypto.createHash("sha256").update(MODEL_VERSION + JSON.stringify(recipe)).digest("hex");
+        if (!recipes.has(principal.tenantId)) recipes.set(principal.tenantId, new Map());
+        const library = recipes.get(principal.tenantId);
+        let saved = [...library.values()].find(item => item.cacheKey === cacheKey);
+        const reused = Boolean(saved);
+        if (!saved) {
+          saved = { id: "recipe_" + crypto.randomUUID(), tenantId: principal.tenantId, ownerId: principal.userId, cacheKey, recipe, bat: exportBat() };
+          if (library.size >= 128) library.delete(library.keys().next().value);
+          library.set(saved.id, saved);
+        }
+        await emit({ type: "recipe_prepared", recipeId: saved.id, reused, modelCalls: 0, executed: false });
+        record("recipe_prepared", { recipeId: saved.id, scenarioId: input.scenarioId, reused, productionCommands: false }, principal);
+        return { answer: plan.answer, plan, recipe: { id: saved.id, recipe: saved.recipe, bat: saved.bat }, modelCalls: 0, reused, storage: "tenant memory; session-only" };
+      });
+      return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
+    }
+    const recipeMatch = pathname.match(/^\/api\/recipes\/([A-Za-z0-9_-]+)$/);
+    if (req.method === "GET" && recipeMatch) {
+      const saved = recipes.get(principal.tenantId)?.get(recipeMatch[1]); assertTenantResource(saved, principal);
+      return json(res, 200, { id: saved.id, recipe: saved.recipe, bat: saved.bat }, origin, rate);
+    }
     if (req.method === "GET" && pathname === "/api/session") return json(res, 200, { ...principal, permissions: { editModel: canEdit(principal), approve: principal.roles.some((role) => ["admin", "approver"].includes(role)), productionWrite: false } }, origin, rate);
     if (req.method === "GET" && pathname === "/api/model") return json(res, 200, scopeModel(tenantModel(principal), principal), origin, rate);
     if (req.method === "GET" && pathname === "/api/model/example") return json(res, 200, scopeModel(seedTenantModel(challengeModel, principal), principal), origin, rate);

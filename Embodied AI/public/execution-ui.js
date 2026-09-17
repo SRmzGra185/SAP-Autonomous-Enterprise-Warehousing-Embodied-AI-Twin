@@ -1,6 +1,6 @@
 import { createExceptionUI } from "./exception-ui.js";
 
-export function createExecutionUI({ api, getModel, getWorld, getScenario, run, selectScenario, canApprove }) {
+export function createExecutionUI({ api, getModel, getWorld, getScenario, run, selectScenario, inspectNode, canApprove }) {
   const $ = (id) => document.getElementById(id), put = (id, value) => { $(id).textContent = value; };
   let jobId = null, pending = null, active = null, completed = new Set(), labels = new Map(), events = [];
   const draftHost = document.createElement("div"), proofHost = document.createElement("div");
@@ -72,10 +72,10 @@ export function createExecutionUI({ api, getModel, getWorld, getScenario, run, s
       for (const projected of frame.nodes || []) {
         const node = model.nodes.find((item) => item.id === projected.id); if (!node) continue;
         existing.add(node.id); let el = labels.get(node.id);
-        if (!el) { el = document.createElement("button"); el.type = "button"; el.className = "mesh-label"; el.append(document.createElement("strong"), document.createElement("span")); el.onclick = () => getWorld()?.focusNode?.(node.id); labels.set(node.id, el); $("mesh-labels").append(el); }
+        if (!el) { el = document.createElement("button"); el.type = "button"; el.className = "mesh-label"; el.append(document.createElement("strong"), document.createElement("span")); el.onclick = () => { getWorld()?.focusNode?.(node.id); inspectNode?.(getModel().nodes.find(item => item.id === node.id)); }; labels.set(node.id, el); $("mesh-labels").append(el); }
         el.children[0].textContent = node.name;
-        el.children[1].textContent = `${completed.has(node.id) ? "✓ Done · " : active === node.id ? "● Active · " : ""}Cap ${node.capacity} · ${node.service} tu`;
-        el.title = `${node.name}\n${node.subtitle}\nCapacity ${node.capacity} · Service ${node.service} time units`;
+        el.children[1].textContent = `${completed.has(node.id) ? "✓ Done · " : active === node.id ? "● Active · " : ""}Cap ${node.capacity} · demo service ${node.service} s`;
+        el.title = `${node.name}\n${node.subtitle}\nCapacity ${node.capacity} · Service ${node.service} demo seconds${node.rackState ? "\nRack: " + node.rackState + " · SKU " + node.sku + " · EPC " + node.rfidEpc : ""}`;
         el.classList.toggle("is-active", node.id === active); el.classList.toggle("is-complete", completed.has(node.id));
         el.style.transform = `translate(${projected.x}px, ${projected.y}px) translate(-50%, -100%)`; el.hidden = projected.visible === false;
       }
@@ -98,7 +98,8 @@ export function createExecutionUI({ api, getModel, getWorld, getScenario, run, s
       }
       if (event.type === "approval_required") {
         pending = event; status("Waiting for your approval", "waiting"); getWorld()?.setFlowState({ running: true, paused: true }); $("approval-panel").classList.remove("hidden");
-        put("approval-title", `${event.stepId} · ${event.label}`); put("approval-action", `${event.action} Command: ${event.command}`); put("approval-scope", `One simulated action · expires ${new Date(event.expiresAt).toLocaleTimeString()} · no SAP or robot writes`);
+        put("approval-title", `${event.stepId} · ${event.label}`); put("approval-action", `${event.action} Command: ${event.command}. Intended actor: ${event.intendedActor || "Authorized operator"}.`);
+        put("approval-scope", `One simulated action · expires ${new Date(event.expiresAt).toLocaleTimeString()} · no SAP or robot writes. ${event.caseContext ? "SKU " + event.caseContext.sku + " · EPC " + event.caseContext.rfidEpc + " · qty " + event.caseContext.quantity + " → " + event.caseContext.destination + " · rack " + event.caseContext.rackState : ""}`);
         exceptionUI.beginApproval(event);
         put("approval-error", canApprove ? "The server is paused. Complete the fingerprint and explicitly review this action. Reject remains available without filling the form." : "An approver or administrator must decide."); $("approval-approve").disabled = !canApprove || !exceptionUI.canApprove(); $("approval-reject").disabled = !canApprove;
       }
