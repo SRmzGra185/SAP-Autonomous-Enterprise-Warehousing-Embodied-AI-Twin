@@ -326,6 +326,11 @@ export async function runRobotRoutine(scenario, input, emit, controls = {}) {
   };
   const started = Date.now(), cycles = input.cycles, steps = scenario.grafcet.steps, transitions = scenario.grafcet.transitions;
   await emit({ type: "robot_routine_started", scenarioId: scenario.id, scenarioName: scenario.name, mode: input.mode, cycles, initialStep: scenario.grafcet.initial, caseContext, productionCommands: false });
+  const guardrails = input.guardrails || {};
+  const guardrailLabels = { allowZoneC: "Entry to restricted Zone C", allowHeavyLift: "Lift greater than 10 kg" };
+  for (const [key, label] of Object.entries(guardrailLabels)) {
+    if (guardrails[key]) await emit({ type: "guardrail_override", scenarioId: scenario.id, guardrail: key, label, at: new Date().toISOString(), audited: true, simulated: true });
+  }
   await transfer("connect", "operation-context", "Shared data sample → governed operations context");
   await transfer("operation-context", "joule", "Context → simulated assistant plan");
   await transfer("joule", "approval", "Plan → local execution policy");

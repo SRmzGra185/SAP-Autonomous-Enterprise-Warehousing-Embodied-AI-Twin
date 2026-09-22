@@ -475,6 +475,7 @@ function consumeEvent(event) {
     logLine("Shelf exception", `${event.caseContext.sku}: ${event.rackState}. No material dispatch; resolve the shelf condition before retrying.`, true);
     $("#model-status").textContent = `Stopped · ${event.rackState}`;
   }
+  if (event.type === "guardrail_override") logLine("Guardrail override", `${event.label} · authorized and recorded to the audit trail at ${new Date(event.at).toLocaleTimeString()}`, true);
   if (event.type === "resource_proposal") logLine("Demo resource selection", `${event.proposal.kind}: ${event.proposal.selected?.name || "NO FEASIBLE RESOURCE"} · synthetic candidates, human review required`);
   if (event.type === "robot_command") {
     const status = event.disposition === "approved_simulation" ? "human approved · simulated" : event.disposition === "shadow_mock" ? "shadow · synthetic inputs" : "simulated";
@@ -529,7 +530,7 @@ function watchJob(jobId, endpoint) {
       if (type === "connection_decision") showToast(payload.decision.allowed ? "Dry-run adapter permitted." : "Adapter denied by safety policy.");
     });
   });
-  for (const type of ["routine_transfer", "approval_required", "approval_resolved", "approval_expired", "job_cancelled", "shelf_exception", "resource_proposal"]) source.addEventListener(type, (event) => {
+  for (const type of ["routine_transfer", "approval_required", "approval_resolved", "approval_expired", "job_cancelled", "shelf_exception", "resource_proposal", "guardrail_override"]) source.addEventListener(type, (event) => {
     const payload = JSON.parse(event.data); if (payload.sequence <= lastSequence) return; lastSequence = payload.sequence;
     consumeEvent(payload);
     if (type === "job_cancelled") { source.close(); state.sources.delete(jobId); }
@@ -724,7 +725,8 @@ async function runRobotRoutine() {
   const scenario = state.activeRobotScenario;
   if (!scenario) return;
   const caseContext = { sku: $("#case-sku").value, rfidEpc: $("#case-rfid").value, quantity: Number($("#case-quantity").value), destination: $("#case-destination").value, rackState: $("#case-rack-state").value };
-  const button = $("#run-robot-routine"), payload = { scenarioId: scenario.id, mode: $("#robot-mode").value, autonomy: $("#robot-autonomy").value, cycles: Number($("#robot-cycles").value), speed: Number($("#robot-speed").value), caseContext };
+  const guardrails = { allowZoneC: $("#guardrail-zone-c").checked, allowHeavyLift: $("#guardrail-heavy-lift").checked };
+  const button = $("#run-robot-routine"), payload = { scenarioId: scenario.id, mode: $("#robot-mode").value, autonomy: $("#robot-autonomy").value, guardrails, cycles: Number($("#robot-cycles").value), speed: Number($("#robot-speed").value), caseContext };
   button.disabled = true; button.textContent = "Routine running…";
   state.grafcetVisited = new Set(); state.activeGrafcetTransition = null;
   try {

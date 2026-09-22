@@ -95,6 +95,11 @@
               <button id="step-robot-routine" class="secondary-button">Preview next step</button>
               <button id="run-robot-routine" class="primary-button">Run routine</button>
             </div>
+            <fieldset class="robot-controls" id="guardrail-overrides">
+              <legend>Safety guardrail overrides · each override is recorded in the audit trail</legend>
+              <label class="guardrail-toggle"><input type="checkbox" id="guardrail-zone-c" /> Allow entry to restricted Zone C</label>
+              <label class="guardrail-toggle"><input type="checkbox" id="guardrail-heavy-lift" /> Allow lift &gt; 10 kg</label>
+            </fieldset>
           </section>
           <aside class="routine-implementation">
             <div class="robot-section-heading"><div><span class="eyebrow">IMPLEMENTATION CONTRACT</span><strong id="routine-title">Robot routine</strong></div><span class="mesh-badge">PROGRAMMABLE</span></div>
