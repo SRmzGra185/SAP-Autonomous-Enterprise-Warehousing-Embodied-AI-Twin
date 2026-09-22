@@ -88,6 +88,7 @@
             </fieldset>
             <div class="robot-controls">
               <label>Execution mode<select id="robot-mode"><option value="simulation">Simulation</option><option value="shadow">Shadow — synthetic inputs only</option><option value="assisted">Assisted — approval required</option><option value="live">Live — locked by Safety Gate</option></select></label>
+              <label>Autonomy level<select id="robot-autonomy"><option value="low">Low — approve every step</option><option value="medium" selected>Medium — approve risky steps</option><option value="high">High — approve critical only</option></select></label>
               <label>Cycles<input id="robot-cycles" type="number" min="1" max="20" value="1" /></label>
               <label>Playback speed<select id="robot-speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
               <button id="load-robot-cell" class="secondary-button">Load local workcell</button>

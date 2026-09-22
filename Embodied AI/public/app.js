@@ -724,7 +724,7 @@ async function runRobotRoutine() {
   const scenario = state.activeRobotScenario;
   if (!scenario) return;
   const caseContext = { sku: $("#case-sku").value, rfidEpc: $("#case-rfid").value, quantity: Number($("#case-quantity").value), destination: $("#case-destination").value, rackState: $("#case-rack-state").value };
-  const button = $("#run-robot-routine"), payload = { scenarioId: scenario.id, mode: $("#robot-mode").value, cycles: Number($("#robot-cycles").value), speed: Number($("#robot-speed").value), caseContext };
+  const button = $("#run-robot-routine"), payload = { scenarioId: scenario.id, mode: $("#robot-mode").value, autonomy: $("#robot-autonomy").value, cycles: Number($("#robot-cycles").value), speed: Number($("#robot-speed").value), caseContext };
   button.disabled = true; button.textContent = "Routine running…";
   state.grafcetVisited = new Set(); state.activeGrafcetTransition = null;
   try {
