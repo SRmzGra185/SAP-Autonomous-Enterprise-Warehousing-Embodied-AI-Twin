@@ -52,7 +52,7 @@ export function validateRobotRoutineInput(body = {}, scenarioIds = []) {
   return {
     scenarioId: oneOf(body.scenarioId, "scenarioId", scenarioIds),
     mode: oneOf(body.mode || "simulation", "mode", ["simulation", "shadow", "assisted", "live"]),
-    autonomy: oneOf(body.autonomy || "medium", "autonomy", ["low", "medium", "high"]),
+    autonomy: oneOf(body.autonomy || "low", "autonomy", ["low", "medium", "high"]),
     cycles: Math.floor(number(body.cycles ?? 1, "cycles", 1, 20)),
     speed: number(body.speed ?? 1, "speed", 0.25, 4),
     caseContext: validateCaseContext(body.caseContext)
