@@ -13,6 +13,24 @@ function step(id, label, action, nodeId, command, sensor, expected, duration = 1
   return { id, label, action, nodeId, command, sensor, expected, duration };
 }
 
+// Risk tier drives how autonomy level gates approval.
+// "critical": physical grasp/lift of goods — always requires approval.
+// "risky": material movement/dispatch — approval unless autonomy is high.
+// "routine": data/validation steps — approval only when autonomy is low.
+function stepRisk(step) {
+  const text = `${step.command || ""} ${step.label || ""}`.toLowerCase();
+  if (/pick|grasp|lift|insert|fasten|place/.test(text)) return "critical";
+  if (/dispatch|convey|route|retrieve|navigate|move|allocate/.test(text)) return "risky";
+  return "routine";
+}
+
+// Given the operator's autonomy level, decide if a step needs human approval.
+function stepNeedsApproval(risk, autonomy) {
+  if (autonomy === "low") return true;
+  if (autonomy === "medium") return risk === "critical" || risk === "risky";
+  return risk === "critical"; // high
+}
+
 function transition(id, from, to, receptivity) {
   return { id, from, to, receptivity };
 }
@@ -308,6 +326,11 @@ export async function runRobotRoutine(scenario, input, emit, controls = {}) {
   };
   const started = Date.now(), cycles = input.cycles, steps = scenario.grafcet.steps, transitions = scenario.grafcet.transitions;
   await emit({ type: "robot_routine_started", scenarioId: scenario.id, scenarioName: scenario.name, mode: input.mode, cycles, initialStep: scenario.grafcet.initial, caseContext, productionCommands: false });
+  const guardrails = input.guardrails || {};
+  const guardrailLabels = { allowZoneC: "Entry to restricted Zone C", allowHeavyLift: "Lift greater than 10 kg" };
+  for (const [key, label] of Object.entries(guardrailLabels)) {
+    if (guardrails[key]) await emit({ type: "guardrail_override", scenarioId: scenario.id, guardrail: key, label, at: new Date().toISOString(), audited: true, simulated: true });
+  }
   await transfer("connect", "operation-context", "Shared data sample → governed operations context");
   await transfer("operation-context", "joule", "Context → simulated assistant plan");
   await transfer("joule", "approval", "Plan → local execution policy");
@@ -317,6 +340,8 @@ export async function runRobotRoutine(scenario, input, emit, controls = {}) {
   for (let cycle = 1; cycle <= cycles; cycle += 1) {
     for (let index = 0; index < steps.length; index += 1) {
       const current = steps[index], nextTransition = transitions.find((item) => item.from === current.id);
+      const risk = stepRisk(current);
+      const needsApproval = input.mode === "assisted" && stepNeedsApproval(risk, input.autonomy || "low");
       const domain = current.domainWorkspace || scenario.workspaceId;
       if (domain !== activeDomain) { await transfer(previousNodeId, domain, "Human-reviewed handoff → " + domain); activeDomain = domain; previousNodeId = domain; }
       const durationMs = duration(current.duration);
@@ -330,8 +355,8 @@ export async function runRobotRoutine(scenario, input, emit, controls = {}) {
         await emit({ type: "shelf_exception", nodeId: current.nodeId, rackState: caseContext.rackState, caseContext, simulated: true, resolved: false });
         throw new Error("Shelf " + caseContext.rackState + ": routine stopped. Resolve the shelf exception and review a new run; no automatic material movement.");
       }
-      await emit({ type: "grafcet_step_active", scenarioId: scenario.id, cycle, stepId: current.id, nodeId: current.nodeId, fromNodeId: previousNodeId, durationMs, index, totalSteps: steps.length, label: current.label, action: current.action, sensor: current.sensor, expected: current.expected, awaitingApproval: input.mode === "assisted" });
-      if (input.mode === "assisted") await controls.requestApproval({ scenarioId: scenario.id, cycle, stepId: current.id, transitionId: nextTransition?.id, nextStepId: nextTransition?.to, nodeId: current.nodeId, label: current.label, command: current.command, action: current.action, expected: current.expected, intendedActor: current.actor || "Authorized operator", caseContext, ...(proposal ? { resourceProposal: proposal } : {}) });
+      await emit({ type: "grafcet_step_active", scenarioId: scenario.id, cycle, stepId: current.id, nodeId: current.nodeId, fromNodeId: previousNodeId, durationMs, index, totalSteps: steps.length, label: current.label, action: current.action, sensor: current.sensor, expected: current.expected, risk, autonomy: input.autonomy || "low", awaitingApproval: needsApproval });
+      if (needsApproval) await controls.requestApproval({ scenarioId: scenario.id, cycle, stepId: current.id, transitionId: nextTransition?.id, nextStepId: nextTransition?.to, nodeId: current.nodeId, label: current.label, command: current.command, action: current.action, expected: current.expected, risk, intendedActor: current.actor || "Authorized operator", caseContext, ...(proposal ? { resourceProposal: proposal } : {}) });
       if (controls.signal?.aborted) throw new Error("Routine cancelled.");
       await emit({ type: "routine_transfer", scenarioId: scenario.id, fromNodeId: previousNodeId, toNodeId: current.nodeId, nodeId: current.nodeId, stepId: current.id, label: current.label, durationMs, simulated: true });
       await emit({

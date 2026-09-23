@@ -8,6 +8,12 @@ const text = (value, name, max = 120) => {
 const number = (value, name, min, max) => { const parsed = Number(value); if (!Number.isFinite(parsed) || parsed < min || parsed > max) throw new HttpError(400, `${name} must be between ${min} and ${max}.`, "validation_error"); return parsed; };
 const oneOf = (value, name, options) => { if (!options.includes(value)) throw new HttpError(400, `${name} must be one of: ${options.join(", ")}.`, "validation_error"); return value; };
 
+// Guardrail overrides are strict booleans; anything not exactly true is treated as off (safe default).
+const validateGuardrails = (value = {}) => ({
+  allowZoneC: value.allowZoneC === true,
+  allowHeavyLift: value.allowHeavyLift === true
+});
+
 export function validateModelInput(body) {
   if (!body || typeof body !== "object" || !Array.isArray(body.nodes) || !Array.isArray(body.edges)) throw new HttpError(400, "Model requires nodes and edges arrays.", "validation_error");
   if (body.nodes.length > 250 || body.edges.length > 750) throw new HttpError(400, "Model exceeds the demo size limit.", "validation_error");
@@ -64,6 +70,8 @@ export function validateRobotRoutineInput(body = {}, scenarioIds = []) {
   return {
     scenarioId: oneOf(body.scenarioId, "scenarioId", scenarioIds),
     mode: oneOf(body.mode || "simulation", "mode", ["simulation", "shadow", "assisted", "live"]),
+    autonomy: oneOf(body.autonomy || "low", "autonomy", ["low", "medium", "high"]),
+    guardrails: validateGuardrails(body.guardrails),
     cycles: Math.floor(number(body.cycles ?? 1, "cycles", 1, 20)),
     speed: number(body.speed ?? 1, "speed", 0.25, 4),
     caseContext: validateCaseContext(body.caseContext)
