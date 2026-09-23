@@ -88,12 +88,18 @@
             </fieldset>
             <div class="robot-controls">
               <label>Execution mode<select id="robot-mode"><option value="simulation">Simulation</option><option value="shadow">Shadow — synthetic inputs only</option><option value="assisted">Assisted — approval required</option><option value="live">Live — locked by Safety Gate</option></select></label>
+              <label>Autonomy level<select id="robot-autonomy"><option value="low" selected>Low — approve every step</option><option value="medium">Medium — approve risky steps</option><option value="high">High — approve critical only</option></select></label>
               <label>Cycles<input id="robot-cycles" type="number" min="1" max="20" value="1" /></label>
               <label>Playback speed<select id="robot-speed"><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></label>
               <button id="load-robot-cell" class="secondary-button">Load local workcell</button>
               <button id="step-robot-routine" class="secondary-button">Preview next step</button>
               <button id="run-robot-routine" class="primary-button">Run routine</button>
             </div>
+            <fieldset class="robot-controls" id="guardrail-overrides">
+              <legend>Safety guardrail overrides · each override is recorded in the audit trail</legend>
+              <label class="guardrail-toggle"><input type="checkbox" id="guardrail-zone-c" /> Allow entry to restricted Zone C</label>
+              <label class="guardrail-toggle"><input type="checkbox" id="guardrail-heavy-lift" /> Allow lift &gt; 10 kg</label>
+            </fieldset>
           </section>
           <aside class="routine-implementation">
             <div class="robot-section-heading"><div><span class="eyebrow">IMPLEMENTATION CONTRACT</span><strong id="routine-title">Robot routine</strong></div><span class="mesh-badge">PROGRAMMABLE</span></div>

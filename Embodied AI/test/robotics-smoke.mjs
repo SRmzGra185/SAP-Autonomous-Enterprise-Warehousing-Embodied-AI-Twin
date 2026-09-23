@@ -88,7 +88,7 @@ try {
   assert.equal(planning.usage.modelCalls, 0);
   assert.equal(planning.plan.length, 2);
 
-  const start = await request("/api/robot-routines", { scenarioId: scenario.id, mode: "assisted", cycles: 1, speed: 4 });
+  const start = await request("/api/robot-routines", { scenarioId: scenario.id, mode: "assisted", autonomy: "low", cycles: 1, speed: 4 });
   assert.equal(start.status, 202);
   const id = start.body.jobId;
   const unknownProof = { checks: Object.fromEntries(RESOLUTION_CHECKS.map(key => [key, { state: "unknown", evidenceReference: "", reason: "" }])) };
