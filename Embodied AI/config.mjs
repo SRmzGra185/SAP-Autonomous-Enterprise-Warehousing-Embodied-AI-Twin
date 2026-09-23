@@ -11,6 +11,8 @@ const list = (value, fallback = []) => {
 
 const port = integer("PORT", 4173, 1024, 65535);
 const production = process.env.NODE_ENV === "production";
+const aicoreBound = Boolean(process.env.AICORE_SERVICE_KEY) || /"label"\s*:\s*"aicore"/.test(process.env.VCAP_SERVICES || "");
+const llmProvider = process.env.LLM_PROVIDER || (aicoreBound ? "aicore" : process.env.ANTHROPIC_API_KEY ? "anthropic" : "mock");
 
 export const config = Object.freeze({
   environment: process.env.NODE_ENV || "development",
@@ -20,6 +22,8 @@ export const config = Object.freeze({
   appOrigins: list(process.env.APP_ORIGINS, [`http://127.0.0.1:${port}`, `http://localhost:${port}`]),
   bodyLimitBytes: integer("BODY_LIMIT_BYTES", 262144, 1024, 1048576),
   rateLimit: { windowMs: integer("RATE_LIMIT_WINDOW_MS", 60000, 1000, 3600000), max: integer("RATE_LIMIT_MAX", 120, 1, 10000), agentMax: integer("AGENT_RATE_LIMIT_MAX", 15, 1, 120) },
+  // Isaac Sim executor bridge: shared secret sent as x-isaac-token by the executor (never stored in the repo).
+  isaac: { token: process.env.ISAAC_TOKEN || "", claimTimeoutMs: integer("ISAAC_CLAIM_TIMEOUT_MS", 10000, 1000, 120000), eventTimeoutMs: integer("ISAAC_EVENT_TIMEOUT_MS", 60000, 5000, 600000), executorTtlMs: integer("ISAAC_EXECUTOR_TTL_MS", 15000, 3000, 120000) },
   auth: {
     mode: process.env.AUTH_MODE || "desktop",
     issuer: process.env.OIDC_ISSUER || "",
@@ -32,20 +36,22 @@ export const config = Object.freeze({
     jwksTtlMs: integer("OIDC_JWKS_TTL_MS", 300000, 30000, 3600000)
   },
   orchestrator: {
-    // Legacy provider settings remain inert; the operations API exposes only local
-    // Joule simulation until a supported tenant interface is implemented.
-    enabled: false,
-    apiKey: process.env.OPENAI_API_KEY || "",
-    baseUrl: process.env.OPENAI_BASE_URL || "https://api.openai.com/v1",
-    primaryModel: process.env.ORCHESTRATOR_MODEL || "gpt-5.6-sol",
-    fallbackModel: process.env.FALLBACK_MODEL || "gpt-5.5-pro",
-    reasoningEffort: process.env.ORCHESTRATOR_REASONING || "xhigh",
+    // Joule runs on SAP AI Core (Generative AI Hub) when an `aicore` binding or AICORE_SERVICE_KEY is present;
+    // otherwise the operations API keeps the local deterministic planner.
+    provider: llmProvider,
+    enabled: llmProvider !== "mock" && process.env.LLM_ENABLED !== "false",
+    apiKey: process.env.ANTHROPIC_API_KEY || "",
+    baseUrl: process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com",
+    resourceGroup: process.env.AICORE_RESOURCE_GROUP || "default",
+    primaryModel: process.env.ORCHESTRATOR_MODEL || (llmProvider === "aicore" ? "anthropic--claude-4.8-opus" : "anthropic--claude-4.7-opus"),
+    fallbackModel: process.env.FALLBACK_MODEL || (llmProvider === "aicore" ? "anthropic--claude-4.6-sonnet" : process.env.ORCHESTRATOR_MODEL || "anthropic--claude-4.7-opus"),
+    effort: process.env.ORCHESTRATOR_EFFORT || "high",
+    thinking: process.env.ORCHESTRATOR_THINKING !== "off",
     maxTokens: integer("ORCHESTRATOR_MAX_TOKENS", 2400, 256, 16000),
     maxSteps: integer("ORCHESTRATOR_MAX_STEPS", 8, 1, 32),
     maxDelegations: integer("ORCHESTRATOR_MAX_DELEGATIONS", 4, 1, 12),
-    pollMs: integer("OPENAI_POLL_MS", 1000, 250, 10000),
-    timeoutMs: integer("OPENAI_TIMEOUT_MS", 120000, 5000, 600000),
-    promptCachePrefix: process.env.PROMPT_CACHE_PREFIX || "sap:embodied-ai:orchestration:v1"
+    timeoutMs: integer("LLM_TIMEOUT_MS", 120000, 5000, 600000),
+    promptCachePrefix: process.env.PROMPT_CACHE_PREFIX || "sap:embodied-ai:orchestration:v2"
   }
 });
 
@@ -54,7 +60,10 @@ export function assertSecureConfiguration() {
   if (!["desktop", "oidc"].includes(config.auth.mode)) throw new Error("AUTH_MODE must be desktop or oidc.");
   if ((config.production || config.auth.mode === "oidc") && (!config.auth.issuer || !config.auth.audience)) throw new Error("OIDC_ISSUER and OIDC_AUDIENCE are required for production/OIDC mode.");
   if (config.production && config.auth.mode !== "oidc") throw new Error("Production requires AUTH_MODE=oidc.");
-  if (config.orchestrator.enabled && !config.orchestrator.apiKey) throw new Error("OPENAI_API_KEY is required when OPENAI_ENABLED=true.");
+  if (!["aicore", "anthropic", "mock"].includes(config.orchestrator.provider)) throw new Error("LLM_PROVIDER must be aicore, anthropic or mock.");
+  if (config.orchestrator.enabled && config.orchestrator.provider === "anthropic" && !config.orchestrator.apiKey) throw new Error("ANTHROPIC_API_KEY is required for LLM_PROVIDER=anthropic.");
+  if (config.orchestrator.enabled && config.orchestrator.provider === "aicore" && !aicoreBound) throw new Error("LLM_PROVIDER=aicore requires an aicore service binding or AICORE_SERVICE_KEY.");
+  if (!["low", "medium", "high", "xhigh", "max"].includes(config.orchestrator.effort)) throw new Error("ORCHESTRATOR_EFFORT must be low, medium, high, xhigh or max.");
 }
 
 export function publicConfig() { return { environment: config.environment, authMode: config.auth.mode, trustedOrigins: config.appOrigins, orchestratorEnabled: config.orchestrator.enabled, productionWrites: false }; }

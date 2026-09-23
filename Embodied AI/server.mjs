@@ -14,17 +14,30 @@ import { applyModelWrite, assertTenantResource, canEdit, scopeModel, seedTenantM
 import { validateAgentTask, validateConnectionInput, validateModelInput, validateRobotRoutineInput, validateSimulationInput } from "./validation.mjs";
 import { runOperationsPlan, operationsRuntimeDescriptor } from "./src/operations-runtime.mjs";
 import { sapConnectionDescriptor, validateSapProfile, dryRunSapConnection } from "./src/sap-connections.mjs";
-import { composeRobotTwin, robotScenarios, robotScenarioById, robotScenarioIds, runRobotRoutine } from "./src/robotics.mjs";
+import { composeRobotTwin, robotScenarios, robotScenarioById, robotScenarioIds, runRobotRoutine, computeLogisticsKpis } from "./src/robotics.mjs";
 import { createApprovalGate } from "./src/approvals.mjs";
 import { describeExceptionControls, validateResolutionProof } from "./src/exception-resolution.mjs";
 import { experimentTemplate, validateExperimentProfile } from "./src/industrial-timing.mjs";
 import { descriptor as recipeDescriptor, validateRequest as validateChatRequest, buildPlan, buildRecipe, exportBat } from "./src/routine-library.mjs";
+import { validateOptimizationInput } from "./validation.mjs";
+import { runAgentTask, runtimeDescriptor } from "./orchestrator.mjs";
+import { runLayoutOptimization } from "./src/optimizer.mjs";
+import { jouleAssist, jouleDescriptor } from "./src/joule-assistant.mjs";
+import { buildScenarioAnalytics } from "./src/analytics.mjs";
+import { buildLastRunAnalytics, buildLastRoutineAnalytics } from "./src/run-analytics.mjs";
+import { createIsaacBridge } from "./src/isaac-bridge.mjs";
+import { createHumanoidLab, validateTrainInput, validateDeployInput, validateTeleopInput } from "./src/humanoid-lab.mjs";
+import { jouleTeleopAssist, PRESET_PROMPTS as H1_JOULE_PROMPTS } from "./src/humanoid-joule.mjs";
 
 assertSecureConfiguration();
 const __dirname = path.dirname(fileURLToPath(import.meta.url)), publicDir = path.join(__dirname, "public");
 const jobs = new Map(), tenantModels = new Map(), tenantProfiles = new Map(), auditTrail = [auditEntry("server_started", { result: "desktop-safe", productionWrites: false })];
+const lastSimulationByTenant = new Map(); // tenantId -> job (kind "simulation", status "complete")
+const lastRoutineByTenant = new Map(); // tenantId -> job (kind "robot_routine", status "complete")
 const limit = createRateLimiter(config.rateLimit), adapterIds = adapters.map((adapter) => adapter.id);
-const runtime = operationsRuntimeDescriptor(config);
+const isaac = createIsaacBridge(config);
+const humanoidLab = createHumanoidLab(isaac);
+const runtime = config.orchestrator.enabled ? runtimeDescriptor(config) : operationsRuntimeDescriptor(config);
 const recipes = new Map();
 const challengeScenario = robotScenarioById("autonomous-inspection");
 const challengeModel = composeRobotTwin(defaultModel, defaultModel, challengeScenario);
@@ -36,11 +49,27 @@ function json(res, status, payload, origin = null, rate = null) {
   res.end(JSON.stringify(payload));
 }
 
-function sendFile(res, filePath, origin) {
-  const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".png": "image/png", ".svg": "image/svg+xml" };
+function sendFile(res, filePath, origin, req) {
+  const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json; charset=utf-8", ".webmanifest": "application/manifest+json; charset=utf-8", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".svg": "image/svg+xml", ".mp4": "video/mp4" };
   const extension = path.extname(filePath), executable = [".html", ".js", ".mjs", ".css", ".webmanifest"].includes(extension);
   applyHeaders(res, origin);
-  res.writeHead(200, { "Content-Type": types[extension] || "application/octet-stream", "Cache-Control": executable ? "no-store" : "private, max-age=300" });
+  const headers = { "Content-Type": types[extension] || "application/octet-stream", "Cache-Control": executable ? "no-store" : "private, max-age=300" };
+  if (extension === ".mp4") {
+    // Byte-range support so the intro video can seek and stream in <video>.
+    const { size } = fs.statSync(filePath), range = /^bytes=(\d*)-(\d*)$/.exec(req?.headers?.range || "");
+    headers["Accept-Ranges"] = "bytes";
+    if (range && (range[1] || range[2])) {
+      const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+      const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+      if (Number.isNaN(start) || Number.isNaN(end) || start >= size || start > end) { res.writeHead(416, { "Content-Range": `bytes */${size}` }); return res.end(); }
+      res.writeHead(206, { ...headers, "Content-Range": `bytes ${start}-${end}/${size}`, "Content-Length": end - start + 1 });
+      if (req?.method === "HEAD") return res.end();
+      return fs.createReadStream(filePath, { start, end }).pipe(res);
+    }
+    headers["Content-Length"] = size;
+  }
+  res.writeHead(200, headers);
+  if (req?.method === "HEAD") return res.end();
   fs.createReadStream(filePath).pipe(res);
 }
 
@@ -67,7 +96,9 @@ function launchJob(kind, principal, task) {
   setImmediate(async () => {
     job.status = "running"; appendJobEvent(job, { type: "job_started", kind });
     try {
-      job.result = await task((event) => appendJobEvent(job, event), { requestApproval: (action) => job.approvals.request(action), signal: job.controller.signal }); job.status = "complete";
+      job.result = await task((event) => appendJobEvent(job, event), { requestApproval: (action) => job.approvals.request(action), signal: job.controller.signal }, job); job.status = "complete";
+      if (kind === "simulation") lastSimulationByTenant.set(principal.tenantId, job);
+      if (kind === "robot_routine") lastRoutineByTenant.set(principal.tenantId, job);
       record(`${kind}_complete`, { jobId: job.id, result: "complete" }, principal); appendJobEvent(job, { type: "job_complete", result: job.result });
     } catch (error) {
       job.status = job.controller.signal.aborted ? "cancelled" : "failed"; job.error = error.message;
@@ -78,6 +109,16 @@ function launchJob(kind, principal, task) {
 }
 
 function jobEnvelope(job) { return { id: job.id, kind: job.kind, status: job.status, pendingApproval: job.approvals.pending, result: job.result, error: job.error, events: job.events.slice(-100) }; }
+
+function lastSimulationJob(principal) {
+  const job = lastSimulationByTenant.get(principal.tenantId);
+  return job && job.tenantId === principal.tenantId ? job : null;
+}
+
+function lastRoutineJob(principal) {
+  const job = lastRoutineByTenant.get(principal.tenantId);
+  return job && job.tenantId === principal.tenantId ? job : null;
+}
 
 function handleEvents(req, res, job, origin) {
   applyHeaders(res, origin);
@@ -94,9 +135,18 @@ async function routeRequest(req, res) {
   if (req.method === "GET" && pathname === "/api/health") return json(res, 200, { ok: true, app: operationsScope.name, version: MODEL_VERSION, authMode: config.auth.mode }, origin);
   if (req.method === "GET" && pathname === "/api/config") return json(res, 200, publicConfig(), origin);
 
+  // Isaac Sim executor routes: authenticated by the shared executor token, not by a user session.
+  if (pathname.startsWith("/api/isaac/executor/")) {
+    isaac.authorize(req);
+    const rate = limit(`isaac:${req.socket.remoteAddress || "unknown"}`, config.rateLimit.max * 10);
+    if (req.method === "POST" && pathname === "/api/isaac/executor/next") { const body = await readJson(req, config); const next = isaac.nextMission(body.executor || {}); return json(res, 200, { ...(next?.humanoidJob ? { humanoidJob: next.humanoidJob } : { mission: next }), serverTime: Date.now() }, origin, rate); }
+    if (req.method === "POST" && pathname === "/api/isaac/executor/events") { const body = await readJson(req, { ...config, bodyLimitBytes: Math.max(config.bodyLimitBytes, 1_000_000) }); return json(res, 202, isaac.pushEvents(String(body.jobId || ""), Array.isArray(body.events) ? body.events : []), origin, rate); }
+    throw new HttpError(404, "Isaac executor route not found.", "not_found");
+  }
+
   if (pathname.startsWith("/api/")) {
-    const principal = await authenticate(req, config), agentRoute = ["/api/agent/tasks", "/api/joule/chat"].includes(pathname), rate = limit(`${rateKey(req, principal)}:${agentRoute ? "agent" : "api"}`, agentRoute ? config.rateLimit.agentMax : config.rateLimit.max);
-    if (req.method === "GET" && pathname === "/api/joule/descriptor") return json(res, 200, recipeDescriptor(), origin, rate);
+    const principal = await authenticate(req, config), agentRoute = ["/api/agent/tasks", "/api/joule/chat", "/api/optimizations", "/api/analytics/scenarios", "/api/analytics/last-run"].includes(pathname), rate = limit(`${rateKey(req, principal)}:${agentRoute ? "agent" : "api"}`, agentRoute ? config.rateLimit.agentMax : config.rateLimit.max);
+    if (req.method === "GET" && pathname === "/api/joule/descriptor") return json(res, 200, jouleDescriptor(config, recipeDescriptor()), origin, rate);
     if (req.method === "POST" && pathname === "/api/joule/chat") {
       if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
       const input = validateChatRequest(await readJson(req, config));
@@ -112,9 +162,10 @@ async function routeRequest(req, res) {
           if (library.size >= 128) library.delete(library.keys().next().value);
           library.set(saved.id, saved);
         }
-        await emit({ type: "recipe_prepared", recipeId: saved.id, reused, modelCalls: 0, executed: false });
-        record("recipe_prepared", { recipeId: saved.id, scenarioId: input.scenarioId, reused, productionCommands: false }, principal);
-        return { answer: plan.answer, plan, recipe: { id: saved.id, recipe: saved.recipe, bat: saved.bat }, modelCalls: 0, reused, storage: "tenant memory; session-only" };
+        const joule = await jouleAssist(config, { request: input, plan, principal, emit });
+        await emit({ type: "recipe_prepared", recipeId: saved.id, reused, modelCalls: joule ? 1 : 0, executed: false });
+        record("recipe_prepared", { recipeId: saved.id, scenarioId: input.scenarioId, reused, assistant: joule ? "aicore" : "local", productionCommands: false }, principal);
+        return { answer: joule?.answer || plan.answer, plan: { ...plan, connected: Boolean(joule), assistant: joule ? "aicore" : "local" }, joule, recipe: { id: saved.id, recipe: saved.recipe, bat: saved.bat }, modelCalls: joule ? 1 : 0, reused, storage: "tenant memory; session-only" };
       });
       return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
     }
@@ -193,8 +244,35 @@ async function routeRequest(req, res) {
       return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
     }
     if (req.method === "POST" && pathname === "/api/agent/tasks") {
-      const task = validateAgentTask(await readJson(req, config), runtime.limits), job = launchJob("agent_task", principal, (emit) => runOperationsPlan(task, principal, robotScenarioById(tenantModel(principal).activeScenarioId) || challengeScenario, emit));
-      record("agent_task_queued", { jobId: job.id, goal: task.goal.slice(0, 120), result: "queued" }, principal);
+      const task = validateAgentTask(await readJson(req, config), runtime.limits), scenario = robotScenarioById(tenantModel(principal).activeScenarioId) || challengeScenario;
+      const job = launchJob("agent_task", principal, (emit) => config.orchestrator.enabled
+        ? runAgentTask(config, task, principal, emit, { model: scopeModel(tenantModel(principal), principal), scenario })
+        : runOperationsPlan(task, principal, scenario, emit));
+      record("agent_task_queued", { jobId: job.id, goal: task.goal.slice(0, 120), provider: config.orchestrator.provider, result: "queued" }, principal);
+      return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
+    }
+    if (req.method === "GET" && pathname === "/api/analytics/scenarios") {
+      const analytics = await buildScenarioAnalytics(config, principal, { entities: url.searchParams.get("entities"), seed: url.searchParams.get("seed"), runs: url.searchParams.get("runs"), refresh: url.searchParams.get("refresh") === "1" });
+      if (!analytics.cached) record("analytics_generated", { scenarios: analytics.scenarios.length, provider: analytics.provider, joule: Boolean(analytics.joule), result: "generated" }, principal);
+      return json(res, 200, analytics, origin, rate);
+    }
+    if (req.method === "GET" && pathname === "/api/analytics/last-run") {
+      const simJob = lastSimulationJob(principal), routineJob = lastRoutineJob(principal);
+      const simAt = simJob ? simJob.events.find((event) => event.type === "job_complete")?.at : null;
+      const routineAt = routineJob ? routineJob.events.find((event) => event.type === "job_complete")?.at : null;
+      if (!simAt && !routineAt) return json(res, 404, { error: "No completed run yet for this tenant.", code: "no_simulation_run", hint: "Run a simulation or a routine from the Routine Lab first." }, origin, rate);
+      const useRoutine = Boolean(routineAt) && (!simAt || routineAt > simAt);
+      const analytics = useRoutine
+        ? await buildLastRoutineAnalytics(config, principal, { job: routineJob, scenario: robotScenarioById(routineJob.result?.scenarioId), kpis: computeLogisticsKpis(routineJob) })
+        : await buildLastRunAnalytics(config, principal, { job: simJob, model: scopeModel(tenantModel(principal), principal) });
+      record("last_run_analytics_generated", { jobId: analytics.jobId, kind: analytics.kind, joule: Boolean(analytics.joule), result: "generated" }, principal);
+      return json(res, 200, analytics, origin, rate);
+    }
+    if (req.method === "POST" && pathname === "/api/optimizations") {
+      const input = validateOptimizationInput(await readJson(req, config)), model = scopeModel(tenantModel(principal), principal);
+      if ([...jobs.values()].some((job) => job.tenantId === principal.tenantId && job.kind === "layout_optimization" && ["queued", "running"].includes(job.status))) throw new HttpError(409, "An optimization is already running for this tenant.", "optimization_busy");
+      const job = launchJob("layout_optimization", principal, (emit, controls) => runLayoutOptimization(config, model, input, principal, emit, controls));
+      record("optimization_queued", { jobId: job.id, objective: input.objective, iterations: input.iterations, provider: config.orchestrator.provider, result: "queued" }, principal);
       return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
     }
     if (req.method === "POST" && pathname === "/api/robot-routines") {
@@ -210,6 +288,44 @@ async function routeRequest(req, res) {
       return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
     }
     if (req.method === "GET" && pathname === "/api/robot-routines/active") return json(res, 200, [...jobs.values()].filter((job) => job.tenantId === principal.tenantId && job.kind === "robot_routine" && ["queued", "running", "awaiting_approval"].includes(job.status)).map(jobEnvelope), origin, rate);
+    const routineKpisMatch = pathname.match(/^\/api\/robot-routines\/([^/]+)\/kpis$/);
+    if (req.method === "GET" && routineKpisMatch) {
+      const job = jobs.get(routineKpisMatch[1]); assertTenantResource(job, principal);
+      if (job.kind !== "robot_routine") throw new HttpError(400, "Not a robot routine job.", "validation_error");
+      const kpis = computeLogisticsKpis(job);
+      if (!kpis) return json(res, 404, { error: "No measurable KPIs for this job/scenario.", code: "no_kpis" }, origin, rate);
+      return json(res, 200, kpis, origin, rate);
+    }
+
+    // Digital Twin Robotics · Unitree H1 humanoid module (separate lane from warehouse routines).
+    if (req.method === "GET" && pathname === "/api/humanoid/descriptor") return json(res, 200, humanoidLab.descriptor(), origin, rate);
+    if (req.method === "GET" && pathname === "/api/humanoid/joule/prompts") return json(res, 200, { prompts: H1_JOULE_PROMPTS }, origin, rate);
+    if (req.method === "POST" && ["/api/humanoid/train", "/api/humanoid/deploy", "/api/humanoid/teleop"].includes(pathname)) {
+      if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
+      const kind = pathname.split("/").pop();
+      if ([...jobs.values()].some((job) => job.tenantId === principal.tenantId && job.kind === "humanoid" && ["queued", "running"].includes(job.status))) throw new HttpError(409, "Stop or finish the active H1 job before starting another.", "routine_busy");
+      const body = await readJson(req, config);
+      const input = kind === "train" ? validateTrainInput(body) : kind === "deploy" ? validateDeployInput(body) : validateTeleopInput(body);
+      const runner = kind === "train" ? humanoidLab.runTrain : kind === "deploy" ? humanoidLab.runDeploy : humanoidLab.runTeleop;
+      const job = launchJob("humanoid", principal, (emit, controls, job) => runner(input, emit, controls, job));
+      record(`humanoid_${kind}_queued`, { jobId: job.id, result: "queued" }, principal);
+      return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
+    }
+    if (req.method === "POST" && pathname === "/api/humanoid/joule") {
+      if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
+      if ([...jobs.values()].some((job) => job.tenantId === principal.tenantId && job.kind === "humanoid" && ["queued", "running"].includes(job.status))) throw new HttpError(409, "Stop or finish the active H1 job before starting another.", "routine_busy");
+      const body = await readJson(req, config);
+      const goal = typeof body?.goal === "string" ? body.goal.trim().slice(0, 300) : "";
+      if (!goal) throw new HttpError(400, "Describe what the H1 should do.", "validation_error");
+      const job = launchJob("humanoid", principal, async (emit, controls, job) => {
+        const joule = await jouleTeleopAssist(config, { goal, principal, emit });
+        await emit({ type: "h1_joule_answer", goal, answer: joule.answer, command: joule.command, provider: joule.provider, model: joule.model });
+        return humanoidLab.runTeleop(joule.command, emit, controls, job);
+      });
+      record("humanoid_joule_queued", { jobId: job.id, goal, result: "queued" }, principal);
+      return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
+    }
+    if (req.method === "GET" && pathname === "/api/humanoid/active") return json(res, 200, [...jobs.values()].filter((job) => job.tenantId === principal.tenantId && job.kind === "humanoid" && ["queued", "running"].includes(job.status)).map(jobEnvelope), origin, rate);
     const resolutionMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/resolution$/);
     if (resolutionMatch && ["GET", "POST"].includes(req.method)) {
       const job = jobs.get(resolutionMatch[1]); assertTenantResource(job, principal);
@@ -253,7 +369,7 @@ async function routeRequest(req, res) {
   if (req.method !== "GET" && req.method !== "HEAD") throw new HttpError(405, "Method not allowed.", "method_not_allowed");
   const requested = pathname === "/" ? "/index.html" : pathname, safePath = path.resolve(publicDir, `.${requested}`), relative = path.relative(publicDir, safePath);
   if (relative.startsWith("..") || path.isAbsolute(relative) || !fs.existsSync(safePath) || fs.statSync(safePath).isDirectory()) throw new HttpError(404, "Not found.", "not_found");
-  return sendFile(res, safePath, origin);
+  return sendFile(res, safePath, origin, req);
 }
 
 const server = http.createServer((req, res) => routeRequest(req, res).catch((error) => {

@@ -1,0 +1,11 @@
+node_modules
+.git
+*.log
+*.md
+*.cmd
+*.ps1
+Dockerfile
+test
+3d-preview*.png
+lens-preview*.png
+lens-workbench-preview.png

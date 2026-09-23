@@ -368,3 +368,52 @@ export async function runRobotRoutine(scenario, input, emit, controls = {}) {
     evidence: ["commands", "sensor samples", "transition receptivities", "active steps", "tenant audit trace"]
   };
 }
+
+// Two of the six "Logistics" KPIs (src/industrial-kpis.mjs) have real timestamps
+// available today: every job event already carries a wall-clock `at` (server.mjs
+// appendJobEvent) plus `stepId`/`cycle`, so picking/order cycle and queue/dock
+// dwell can be measured from job.events without touching runRobotRoutine. The
+// other four (travel/fleet use, material accuracy, on-time fulfillment, energy)
+// need concepts that don't exist yet (AMR load state, map/shifts, deadlines,
+// battery) and are intentionally left unmeasured — see plan/memory notes.
+function eventsByCycleAndStep(events) {
+  const byCycle = new Map();
+  for (const event of events) {
+    if (event.cycle === undefined || !event.stepId) continue;
+    if (!byCycle.has(event.cycle)) byCycle.set(event.cycle, new Map());
+    const byStep = byCycle.get(event.cycle);
+    if (!byStep.has(event.stepId)) byStep.set(event.stepId, {});
+    byStep.get(event.stepId)[event.type] = event;
+  }
+  return byCycle;
+}
+
+const seconds = (fromAt, toAt) => (fromAt && toAt ? (new Date(toAt).getTime() - new Date(fromAt).getTime()) / 1000 : null);
+const mean = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+
+export function computeLogisticsKpis(job) {
+  if (job?.result?.scenarioId !== "warehouse-fulfillment") return null;
+  const byCycle = eventsByCycleAndStep(job.events || []);
+  const taskToPicking = [], orderToDispatch = [], rackDwell = [], dockDwell = [];
+  for (const byStep of byCycle.values()) {
+    const s0 = byStep.get("S0")?.grafcet_step_active?.at;
+    const s1Active = byStep.get("S1")?.grafcet_step_active?.at;
+    const s1Sample = byStep.get("S1")?.sensor_sample?.at;
+    const s3Sample = byStep.get("S3")?.sensor_sample?.at;
+    const s6Active = byStep.get("S6")?.grafcet_step_active?.at;
+    const s6Sample = byStep.get("S6")?.sensor_sample?.at;
+    const task = seconds(s1Active, s3Sample); if (task !== null) taskToPicking.push(task);
+    const dispatch = seconds(s0, s6Sample); if (dispatch !== null) orderToDispatch.push(dispatch);
+    const rack = seconds(s1Active, s1Sample); if (rack !== null) rackDwell.push(rack);
+    const dock = seconds(s6Active, s6Sample); if (dock !== null) dockDwell.push(dock);
+  }
+  const round = (value) => (value === null ? null : Math.round(value * 100) / 100);
+  const pickingAndOrderCycle = taskToPicking.length || orderToDispatch.length
+    ? { taskToPickingSeconds: round(mean(taskToPicking)), orderToDispatchSeconds: round(mean(orderToDispatch)) }
+    : null;
+  const queueAndDockDwell = rackDwell.length || dockDwell.length
+    ? { rackDwellSeconds: round(mean(rackDwell)), dockDwellSeconds: round(mean(dockDwell)) }
+    : null;
+  if (!pickingAndOrderCycle && !queueAndDockDwell) return null;
+  return { scenarioId: "warehouse-fulfillment", cyclesMeasured: byCycle.size, pickingAndOrderCycle, queueAndDockDwell, source: "job.events timestamps (real wall-clock, not simulated machine time)" };
+}

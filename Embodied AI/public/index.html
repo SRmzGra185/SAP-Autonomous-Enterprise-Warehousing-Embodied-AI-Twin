@@ -16,7 +16,7 @@
     <header class="topbar">
       <div class="brand-copy"><strong>SAP AUTONOMOUS ENTERPRISE</strong><span>Embodied AI Simulation Lab</span></div>
       <nav class="top-actions" aria-label="Application menu">
-        <button data-command="new">New Model</button><button data-command="open">Open</button><button data-command="load">Load Example</button><button data-command="getting-started">Getting Started</button><a href="https://github.com/SRmzGra185" target="_blank" rel="noreferrer">GitHub ↗</a>
+        <button data-command="new">New Model</button><button data-command="open">Open</button><button data-command="load">Load Example</button><button data-command="getting-started">Getting Started</button><button data-command="intro">Watch intro</button><a href="https://github.com/SRmzGra185" target="_blank" rel="noreferrer">GitHub ↗</a>
       </nav>
       <span class="identity-pill" id="identity-pill">desktop · loading</span>
       <button class="mode-toggle active" id="edit-toggle"><span></span> EDIT MODE</button>
@@ -25,7 +25,7 @@
 
     <main class="app-shell">
       <section class="ribbon">
-        <div class="ribbon-tabs" role="tablist"><button class="active" data-ribbon="model">Model</button><button data-ribbon="simulate">Simulate</button><button data-ribbon="integrate">Integrate</button><button data-ribbon="audit">Governance</button><button data-ribbon="agent">Joule Agents</button><button data-ribbon="robot">Embodied AI Lab</button></div>
+        <div class="ribbon-tabs" role="tablist"><button class="active" data-ribbon="model">Model</button><button data-ribbon="simulate">Simulate</button><button data-ribbon="integrate">Integrate</button><button data-ribbon="audit">Governance</button><button data-ribbon="agent">Joule Agents</button><button data-ribbon="robot">Embodied AI Lab</button><button data-ribbon="humanoid">Digital Twin Robotics</button></div>
         <div class="ribbon-tools" id="ribbon-tools"></div>
       </section>
 
@@ -66,7 +66,7 @@
       </section>
 
       <section class="lower-grid">
-        <div class="metrics-panel panel"><div class="panel-heading"><div><span class="eyebrow">EXPERIMENT TELEMETRY</span><h2>DES Essentials</h2></div><span class="live-badge">SIMULATED</span></div><div class="metric-cards"><div class="metric-card"><span>Throughput</span><strong id="metric-throughput">—</strong><small>entities / hour</small></div><div class="metric-card"><span>Avg cycle</span><strong id="metric-cycle">—</strong><small>seconds</small></div><div class="metric-card"><span>P95 cycle</span><strong id="metric-p95">—</strong><small>seconds</small></div><div class="metric-card accent"><span>Resolution proof</span><strong id="metric-breaches">—</strong><small>Evidence required</small></div></div><div class="experiment-controls"><select id="simulation-mode"><option value="fast">Fast DES</option><option value="realtime">Paced DES (playback)</option><option value="monte-carlo">Monte Carlo × 5</option></select><label>Orders <input id="entity-count" type="number" min="8" max="80" value="24" /></label><button id="run-simulation" class="primary-button">▶ Run experiment</button></div></div>
+        <div class="metrics-panel panel"><div class="panel-heading"><div><span class="eyebrow">EXPERIMENT TELEMETRY</span><h2>DES Essentials</h2></div><span class="live-badge">SIMULATED</span></div><div class="metric-cards"><div class="metric-card"><span>Throughput</span><strong id="metric-throughput">—</strong><small>entities / hour</small></div><div class="metric-card"><span>Avg cycle</span><strong id="metric-cycle">—</strong><small>seconds</small></div><div class="metric-card"><span>P95 cycle</span><strong id="metric-p95">—</strong><small>seconds</small></div><div class="metric-card accent"><span>Resolution proof</span><strong id="metric-breaches">—</strong><small>Evidence required</small></div></div><div class="experiment-controls"><select id="simulation-mode"><option value="fast">Fast DES</option><option value="realtime">Paced DES (playback)</option><option value="monte-carlo">Monte Carlo × 5</option></select><label>Orders <input id="entity-count" type="number" min="8" max="80" value="24" /></label><button id="run-simulation" class="primary-button">▶ Run experiment</button></div><div class="optimizer-controls"><span class="eyebrow">AI LAYOUT OPTIMIZER · SAP AI CORE</span><select id="optimizer-objective" aria-label="Objective"><option value="throughput">Maximize throughput</option><option value="p95Cycle">Minimize P95 cycle</option><option value="averageCycle">Minimize avg cycle</option></select><label>Iter <input id="optimizer-iterations" type="number" min="1" max="12" value="3" /></label><button id="run-optimizer" class="primary-button">✦ Optimize with AI</button></div><div id="optimizer-result" class="optimizer-result hidden" aria-live="polite"></div></div>
         <div class="console-panel panel"><div class="panel-heading"><div><span class="eyebrow">LOCAL MOCK PLANNING / EVENT LOG</span><h2>Local plan and robot trace</h2></div></div><p class="operations-notice">Joule NOT CONNECTED · the planner runs a bounded local mock, not Joule execution.</p><div class="agent-command"><input id="agent-goal" maxlength="2000" placeholder="Describe a bounded operations goal for a local mock plan" /><button id="run-agent-task" class="primary-button">Start local plan</button></div><div class="console-log" id="console-log"><div class="console-line muted"><span>00:00:00</span><strong>system</strong><p>Safe tenant-scoped runtime initialized.</p></div></div></div>
       </section>
 
@@ -106,16 +106,66 @@
         </div>
       </section>
 
+      <section class="humanoid-lab panel hidden" id="humanoid-lab">
+        <div class="panel-heading robot-lab-heading"><div><span class="eyebrow">DIGITAL TWIN ROBOTICS / ISAAC LAB · ISAAC SIM · ROS</span><h2>Unitree H1 · Locomotion Training &amp; Teleoperation</h2><p>Software-in-the-loop humanoid workflow, modeled on NVIDIA's Digital Twin Robotics module: train a locomotion policy in Isaac Lab, deploy it on the H1 in Isaac Sim, then teleoperate.</p></div><div class="isaac-strip" id="h1-isaac-strip"><span class="isaac-dot"></span><strong id="h1-isaac-status">Isaac Sim · OFFLINE</strong><em id="h1-isaac-executor">no executor connected</em></div></div>
+
+        <div class="humanoid-grid">
+          <section class="humanoid-stage">
+            <div class="robot-section-heading"><div><span class="eyebrow">H1 VIEW</span><strong id="h1-stage-title">Robot camera / chase view</strong></div><span class="mesh-badge" id="h1-gait-badge">STANDBY</span></div>
+            <figure class="isaac-snapshot h1-snapshot" id="h1-snapshot"><img id="h1-snapshot-img" alt="Isaac Sim H1 humanoid view" /><figcaption id="h1-snapshot-caption">Waiting for a job…</figcaption></figure>
+            <div class="h1-pose-strip"><span>Position</span><strong id="h1-pose">x 0.0 · y 0.0 · heading 0°</strong><span>Checkpoint</span><strong id="h1-checkpoint">none loaded</strong></div>
+            <div class="h1-viewer-row"><label>Isaac Sim viewer URL <input id="h1-viewer-url" type="url" placeholder="https://isaac-xxxxx.brevlab.com/viewer" /></label><a id="h1-viewer-link" class="h1-viewer-link" href="#" target="_blank" rel="noreferrer">↗ Open Isaac Sim viewer</a></div>
+          </section>
+
+          <section class="humanoid-panel">
+            <div class="robot-section-heading"><div><span class="eyebrow">1 · TRAIN</span><strong>Isaac Lab locomotion policy</strong></div></div>
+            <div class="humanoid-controls">
+              <label>Task<input id="h1-train-task" value="Isaac-Velocity-Flat-H1-v0" disabled /></label>
+              <label>Iterations<input id="h1-train-iterations" type="number" min="20" max="3000" value="300" /></label>
+              <label>Parallel envs<input id="h1-train-envs" type="number" min="64" max="8192" value="2048" /></label>
+              <button id="h1-train-run" class="primary-button">Train policy</button>
+            </div>
+            <div class="h1-chart-wrap"><svg id="h1-reward-chart" viewBox="0 0 560 160" role="img" aria-label="Training reward curve"></svg></div>
+            <div class="h1-train-readout"><span id="h1-train-status">Not started</span><strong id="h1-train-metric">reward — · episode length —</strong></div>
+
+            <div class="robot-section-heading" style="margin-top:14px"><div><span class="eyebrow">2 · DEPLOY</span><strong>Load policy on the H1</strong></div></div>
+            <div class="humanoid-controls">
+              <label>Checkpoint<select id="h1-deploy-checkpoint"><option value="pretrained">NVIDIA pretrained (flat terrain)</option><option value="latest">Latest trained run</option></select></label>
+              <label>Terrain<select id="h1-deploy-terrain"><option value="flat">Flat</option><option value="rough">Rough</option></select></label>
+              <button id="h1-deploy-run" class="secondary-button">Deploy &amp; stand up</button>
+            </div>
+
+            <div class="robot-section-heading" style="margin-top:14px"><div><span class="eyebrow">3 · TELEOPERATE</span><strong>Drive the H1</strong></div></div>
+            <div class="h1-teleop-pad">
+              <button data-h1-move="forward" class="secondary-button">↑ Walk</button>
+              <div class="h1-teleop-row"><button data-h1-move="left" class="secondary-button">↺ Turn L</button><button data-h1-move="stop" class="secondary-button">■ Stop</button><button data-h1-move="right" class="secondary-button">↻ Turn R</button></div>
+              <button data-h1-move="backward" class="secondary-button">↓ Back</button>
+            </div>
+            <div class="h1-joule">
+              <p class="h1-hint">Or ask Joule: “H1, walk to the AS/RS rack.” Teleoperation and Joule commands share the same executor queue.</p>
+              <div class="h1-joule-presets" id="h1-joule-presets"></div>
+              <div class="h1-joule-row"><input id="h1-joule-goal" maxlength="300" placeholder="Tell the H1 what to do…" /><button id="h1-joule-run" class="secondary-button">Ask Joule</button></div>
+              <p class="h1-joule-answer" id="h1-joule-answer"></p>
+            </div>
+          </section>
+        </div>
+      </section>
+
       <section class="panel" id="joule-chat" aria-label="Joule-inspired local routine assistant"></section>
       <section class="panel" id="industrial-experiments" aria-label="Industrial timing and Monte Carlo laboratory"></section>
       <section class="integration-panel panel" id="operations-connections">
-        <div class="panel-heading"><div><span class="eyebrow">SAPPHIRE AUTONOMOUS OPERATIONS SCOPE</span><h2>SAP BDC Connect & Joule</h2></div><span class="safety-copy">Only two external connections · local scenarios are not native SAP apps</span></div>
+        <div class="panel-heading"><div><span class="eyebrow">SAPPHIRE AUTONOMOUS OPERATIONS SCOPE</span><h2>SAP BDC Connect & Joule</h2></div><div class="bdc-heading-actions"><a class="primary-button bdc-analytics-link" href="/analytics.html">✦ Joule analytics · scenario insights ↗</a><span class="safety-copy">Only two external connections · local scenarios are not native SAP apps</span></div></div>
         <details class="operations-scope"><summary>Supported scope & connection statuses</summary><pre id="operations-scope">Loading operations scope…</pre></details>
         <div id="connections-settings" aria-live="polite">Loading connection settings…</div>
       </section>
     </main>
 
 
+    <section class="guide-panel intro-panel hidden" id="intro-panel" aria-modal="true" role="dialog" aria-labelledby="intro-title">
+      <header><div><span class="eyebrow">INTRODUCTION</span><h2 id="intro-title">SAP Autonomous Operations Twin in 40 seconds</h2><p class="intro-sub">Simulate. Optimize. Execute. · Powered by SAP AI Core, Joule and SAP Business Data Cloud</p></div><button id="intro-close" class="secondary-button">Close</button></header>
+      <video id="intro-video" controls playsinline preload="metadata" poster="/media/intro-poster.jpg"><source src="/media/intro.mp4" type="video/mp4" />Your browser cannot play this video.</video>
+      <div class="intro-actions"><button id="intro-skip" class="secondary-button">Skip intro</button><button id="intro-start" class="primary-button">Play intro</button></div>
+    </section>
     <section class="guide-panel hidden" id="guide-panel" aria-modal="true" role="dialog" aria-labelledby="guide-title">
       <header><div><span class="eyebrow">GETTING STARTED</span><h2 id="guide-title">Run a SAP-to-robot process step by step</h2></div><button id="guide-close" class="secondary-button">Close</button></header>
       <ol>
@@ -139,6 +189,6 @@
     </section>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="/app.js?v=0.7.0-operations"></script>
+    <script type="module" src="/app.js?v=0.9.1-h1fix"></script>
   </body>
 </html>

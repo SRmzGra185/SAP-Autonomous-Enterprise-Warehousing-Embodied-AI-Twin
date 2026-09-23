@@ -1,0 +1,27 @@
+---
+applications:
+  - name: sap-embodied-twin
+    memory: 256M
+    disk_quota: 512M
+    instances: 1
+    buildpacks:
+      - nodejs_buildpack
+    command: node server.mjs
+    routes:
+      - route: sap-embodied-twin.cfapps.eu20-002.hana.ondemand.com
+    services:
+      - joule-dremio-aicore
+    env:
+      HOST: 0.0.0.0
+      NODE_ENV: development
+      AUTH_MODE: desktop
+      TRUST_PROXY: "true"
+      LLM_PROVIDER: aicore
+      AICORE_RESOURCE_GROUP: default
+      ORCHESTRATOR_MODEL: anthropic--claude-4.8-opus
+      FALLBACK_MODEL: anthropic--claude-4.6-sonnet
+      ORCHESTRATOR_EFFORT: high
+      APP_ORIGINS: https://sap-embodied-twin.cfapps.eu20-002.hana.ondemand.com
+      DESKTOP_TENANT_ID: sap-embodied-ai-demo
+      DESKTOP_USER_ID: desktop-owner
+      DESKTOP_ROLE: admin
