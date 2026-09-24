@@ -51,7 +51,7 @@
   // or a "N%" string only (no calc()), so the inner ring is derived numerically.
   function dial(id, { value, min, max, unit, zones, formatter, decimals = 0, radius = 88, center = ["50%", "62%"], fontSize = 34, startAngle = 210, endAngle = -30, title }) {
     const P = PAL(), ink = P.ink, muted = P.muted, face = P.navy;
-    const track = "rgba(255,255,255,0.10)", tick = "rgba(221,214,254,0.35)", split = "rgba(221,214,254,0.6)";
+    const track = css("--track"), tick = css("--tick"), split = css("--split");
     const outer = `${radius}%`, inner = `${Math.max(10, radius - 9)}%`;
     ch(id).setOption({
       backgroundColor: "transparent",
@@ -127,7 +127,7 @@
 
   function renderUtilization() {
     const { nodes, bottleneck, result } = state.data;
-    const { violet, sky, green, amber, red, muted, ink2, navy } = PAL(); const line = "rgba(221,214,254,0.18)";
+    const { violet, sky, green, amber, red, muted, ink2, navy } = PAL(); const line = css("--grid");
     $("#utilSub").textContent = `bottleneck ${bottleneck ? `${bottleneck.name} at ${pct(bottleneck.utilization)}` : "none"} · avg queue ${fmt(result.averageQueuedSeconds, 0)} s/order`;
     ch("utilization").setOption({
       backgroundColor: "transparent", animationDuration: 700,
@@ -183,7 +183,7 @@
   function renderRoutineView() {
     const { scenario, mode, cycles, kpis, unmeasuredKpis } = state.data;
     const picking = kpis?.pickingAndOrderCycle, dwell = kpis?.queueAndDockDwell;
-    const { green, amber, red } = PAL(); const none = "rgba(255,255,255,0.10)";
+    const { green, amber, red } = PAL(); const none = css("--track");
     $("#gaugeLabel").textContent = "Order → dispatch"; $("#gaugeTitle").textContent = scenario?.name || "Routine";
     if (picking?.orderToDispatchSeconds != null) {
       const ceil = Math.max(10, Math.ceil(picking.orderToDispatchSeconds * 1.6 / 5) * 5);
