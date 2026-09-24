@@ -6,7 +6,7 @@ export function createCameraFeed(canvas, { label = "H1 FORWARD CAM" } = {}) {
   if (!canvas) return { start() {}, stop() {} };
   const ctx = canvas.getContext("2d");
   const W = canvas.width, H = canvas.height;
-  let raf = null, frame = 0;
+  let raf = null, frame = 0, liveImage = null;
 
   // Synthetic detected objects that drift slightly to look live.
   const boxes = [
@@ -17,6 +17,17 @@ export function createCameraFeed(canvas, { label = "H1 FORWARD CAM" } = {}) {
   function draw() {
     frame += 1;
     const t = frame / 60;
+
+    // If a real Isaac Sim frame is available, show it instead of the mock scene.
+    if (liveImage && liveImage.complete && liveImage.naturalWidth > 0) {
+      ctx.drawImage(liveImage, 0, 0, W, H);
+      ctx.fillStyle = "#37d67a"; ctx.font = "bold 11px Consolas, monospace";
+      ctx.fillText("● LIVE ISAAC FRAME", 8, 16);
+      ctx.fillStyle = "#7fd0ff"; ctx.font = "11px Consolas, monospace";
+      ctx.fillText(new Date().toLocaleTimeString(), 8, H - 10);
+      raf = requestAnimationFrame(draw);
+      return;
+    }
 
     // Camera background
     ctx.fillStyle = "#0d1420";
@@ -77,6 +88,8 @@ export function createCameraFeed(canvas, { label = "H1 FORWARD CAM" } = {}) {
 
   return {
     start() { if (!raf) draw(); },
-    stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } }
+    stop() { if (raf) { cancelAnimationFrame(raf); raf = null; } },
+    // Pass a loaded <img> to show a real Isaac frame; pass null to return to the mock scene.
+    setLiveImage(img) { liveImage = img && img.complete && img.naturalWidth > 0 ? img : null; }
   };
 }

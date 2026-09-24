@@ -107,6 +107,11 @@ export function createExecutionUI({ api, getModel, getWorld, getScenario, run, s
         riskEl.textContent = `RISK: ${risk.toUpperCase()} — ${riskAdvice[risk] || riskAdvice.routine}`;
         riskEl.dataset.risk = risk;
         approvalCamera ||= createCameraFeed($("approval-camera-canvas"), { label: "H1 CAM · DECISION" });
+        const isaacImg = $("h1-snapshot-img");
+        const hasLiveFrame = isaacImg && isaacImg.complete && isaacImg.naturalWidth > 0;
+        approvalCamera.setLiveImage(hasLiveFrame ? isaacImg : null);
+        const camLabel = $("approval-camera")?.querySelector("small");
+        if (camLabel) camLabel.textContent = hasLiveFrame ? "LIVE ISAAC FRAME" : "SIMULATED FEED";
         approvalCamera.start();
         put("approval-action", `${event.action} Command: ${event.command}. Intended actor: ${event.intendedActor || "Authorized operator"}.`);
         put("approval-scope", `One simulated action · expires ${new Date(event.expiresAt).toLocaleTimeString()} · no SAP or robot writes. ${event.caseContext ? "SKU " + event.caseContext.sku + " · EPC " + event.caseContext.rfidEpc + " · qty " + event.caseContext.quantity + " → " + event.caseContext.destination + " · rack " + event.caseContext.rackState : ""}`);
