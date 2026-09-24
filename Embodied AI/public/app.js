@@ -632,6 +632,7 @@ function consumeEvent(event) {
     updateMetrics(event.summary); $("#model-status").textContent = "Experiment complete"; $("#run-simulation").disabled = false;
     logLine("orchestrator", `completed ${event.summary.completed} entities; p95 cycle ${event.summary.p95Cycle}`);
     confirmOptimizerResult(event.summary);
+    setAnalyticsReady(true);
   }
   if (event.type === "orchestrator_analysis") logLine(plannerLabel(), event.provider && event.provider !== "mock" ? `analyzing with ${event.model} / ${event.effort}` : (event.analysis || event.message || "Preparing a bounded operations plan; Joule NOT CONNECTED"));
   if (event.type === "fallback_activated") logLine("fallback", `${event.from} → ${event.to}: ${event.reason}${event.detail ? ` (${event.detail})` : ""}`, true);
@@ -733,9 +734,25 @@ function watchJob(jobId, endpoint) {
   state.currentJob = jobId;
 }
 
+// The analytics page reads the tenant's most recent completed run from the
+// server, so the link only makes sense once one exists: disabled while a run
+// is in flight, enabled on completion, and re-checked on page load so a prior
+// run survives a refresh.
+function setAnalyticsReady(ready) {
+  const link = $("#analytics-link"); if (!link) return;
+  link.setAttribute("aria-disabled", ready ? "false" : "true");
+  link.title = ready ? "Open Joule analytics for the most recent run" : "Run an experiment first";
+}
+
+async function checkAnalyticsReady() {
+  try { const status = await api("/api/analytics/last-run/status"); setAnalyticsReady(Boolean(status.available)); }
+  catch { setAnalyticsReady(false); }
+}
+
 async function runSimulation() {
   if (state.robotRunning) return showToast("Finish or stop the robot routine before running a DES experiment in the same twin.");
   if (!state.model) return;
+  setAnalyticsReady(false);
   const button = $("#run-simulation"); button.disabled = true; state.events = 0; $("#event-count").textContent = "0 events"; $("#timeline-fill").style.width = "0%"; $("#model-status").textContent = "Experiment queued";
   const payload = { mode: $("#simulation-mode").value, entities: Number($("#entity-count").value), runs: 5, seed: 42 };
   state.meshWorld?.setFlowState({ running: true, queues: {} });
@@ -1125,6 +1142,7 @@ async function boot() {
   const deepLink = new URLSearchParams(location.search);
   changeView(deepLink.get("view") === "2d" ? "2d" : "3d");
   initHumanoidLab();
+  checkAnalyticsReady();
   const activeJobs = await api("/api/robot-routines/active");
   for (const job of activeJobs) { state.executionUI.started(job.id); watchJob(job.id, `/api/jobs/${job.id}/events`); }
   try {

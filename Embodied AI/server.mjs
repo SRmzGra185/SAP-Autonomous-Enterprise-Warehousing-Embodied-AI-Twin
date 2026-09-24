@@ -256,6 +256,12 @@ async function routeRequest(req, res) {
       if (!analytics.cached) record("analytics_generated", { scenarios: analytics.scenarios.length, provider: analytics.provider, joule: Boolean(analytics.joule), result: "generated" }, principal);
       return json(res, 200, analytics, origin, rate);
     }
+    // Cheap existence check for the UI: reads the in-memory index only, never
+    // calls AI Core (the full /last-run does, and takes seconds).
+    if (req.method === "GET" && pathname === "/api/analytics/last-run/status") {
+      const has = Boolean(lastSimulationJob(principal) || lastRoutineJob(principal));
+      return json(res, 200, { available: has }, origin, rate);
+    }
     if (req.method === "GET" && pathname === "/api/analytics/last-run") {
       const simJob = lastSimulationJob(principal), routineJob = lastRoutineJob(principal);
       const simAt = simJob ? simJob.events.find((event) => event.type === "job_complete")?.at : null;
