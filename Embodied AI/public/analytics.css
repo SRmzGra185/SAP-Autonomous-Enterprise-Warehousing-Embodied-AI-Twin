@@ -20,18 +20,25 @@
   --font-medium: "72 Brand Medium", "72", Calibri, "Segoe UI", Arial, system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
-/* White page, lavender panels: page ground white, panels in Ghost Violet (#EDE9FE) with a
-   Violet Mist border — the same surface as the Joule status chip. Text turns navy/violet and
-   the gauges switch to light tokens; the gem is hidden (guide: gem on dark surfaces only). */
+/* White page with light Joule surfaces: text turns navy/violet and the gauges switch to light
+   tokens. Surfaces and the Joule mark follow the Joule assistant of the Soriana Fiori launchpad. */
 :root[data-theme="white"] {
   color-scheme: light; --bg: var(--white); --glow: transparent;
-  --title: var(--navy); --ink: var(--navy); --ink-2: var(--gray-dark); --muted: var(--gray-mid); --muted-2: var(--gray-mid); --label: var(--electric);
+  --title: var(--navy); --ink: var(--navy); --ink-2: var(--gray-dark); --muted: var(--gray-mid); --muted-2: var(--gray-mid); --label: #5b3fd6;
   --glass: var(--ghost); --glass-edge: var(--mist); --glass-2: var(--white); --panel-shadow: none;
-  --tag-ai: var(--electric); --tag-off: #b45309;
-  --track: var(--white); --tick: #c4b5fd; --split: var(--lavender); --grid: rgba(107, 33, 200, .12);
+  --tag-ai: #5b3fd6; --tag-off: #b45309;
+  --track: var(--ghost); --tick: #c4b5fd; --split: var(--lavender); --grid: rgba(107, 33, 200, .12);
+  --joule-surface: linear-gradient(180deg, #ffffff 0%, #faf8ff 60%, #fff0f8 100%);
+  --joule-shadow: 0 8px 40px rgba(88, 62, 214, .18), 0 2px 12px rgba(88, 62, 214, .08);
   --sap-bg: #0070f2; --sap-ink: var(--white); --rule: var(--mist); --err-bg: #fef2f2; --err-ink: #991b1b;
 }
-:root[data-theme="white"] .ai-dot { display: none; }
+/* Panels and stat tiles take the Joule assistant surface from the Soriana Fiori launchpad:
+   white → #FAF8FF → #FFF0F8, 20 px corners, soft violet shadow, no border. */
+:root[data-theme="white"] .panel, :root[data-theme="white"] .gauge-main, :root[data-theme="white"] .tacho {
+  background: var(--joule-surface); border-color: transparent; box-shadow: var(--joule-shadow); border-radius: 20px;
+}
+:root[data-theme="white"] .kpi { background: var(--joule-surface); border-color: transparent; box-shadow: var(--joule-shadow); border-radius: 16px; }
+:root[data-theme="white"] .kpi .k-l { color: #5b3fd6; }
 :root[data-theme="white"] .brand strong { color: var(--navy); }
 :root[data-theme="white"] .brand span { color: var(--electric); }
 :root[data-theme="white"] .brand .back { color: var(--navy); background: var(--white); border-color: var(--mist); }
@@ -136,7 +143,9 @@ tr:hover td { background: var(--ghost); }
 .joule-risks { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-2); }
 .joule-risks li { margin-bottom: 4px; }
 .foot { font-size: 10px; font-style: italic; color: var(--muted-2); margin: 12px 0 0; }
-.ai-dot { width: 22px; height: 22px; margin-left: auto; flex-shrink: 0; }
+.brand-mark { width: 30px; height: 30px; flex-shrink: 0; filter: drop-shadow(0 6px 20px rgba(120, 88, 255, .4)); }
+.jmark { width: 22px; height: 22px; vertical-align: -3px; margin-right: 8px; filter: drop-shadow(0 3px 8px rgba(120, 88, 255, .35)); }
+.ph h2.joule-title { color: #5b3fd6; font-weight: 700; }
 
 /* ---- footer per guide: thin mist rule, gray 9pt ---------------------- */
 footer { display: flex; flex-wrap: wrap; gap: 18px; justify-content: space-between; margin-top: 22px; padding-top: 12px; border-top: .4px solid var(--rule); font-size: 11px; color: var(--muted-2); }

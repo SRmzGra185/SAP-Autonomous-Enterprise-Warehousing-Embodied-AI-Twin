@@ -12,24 +12,14 @@
   <body>
     <svg width="0" height="0" style="position:absolute" aria-hidden="true">
       <defs>
-        <!-- Joule gem: crystal with translucent facets (guide: light facet white 25 %, dark facet black 15 %, blue-violet gradient) -->
-        <linearGradient id="gemBody" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset=".55" stop-color="#6b21c8"/><stop offset="1" stop-color="#9333ea"/></linearGradient>
-        <radialGradient id="gemHalo" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#9333ea" stop-opacity=".55"/><stop offset=".6" stop-color="#9333ea" stop-opacity="0"/></radialGradient>
-        <symbol id="joule-gem" viewBox="0 0 100 100">
-          <circle cx="50" cy="50" r="50" fill="url(#gemHalo)"/>
-          <polygon points="50,6 84,32 72,86 28,86 16,32" fill="url(#gemBody)"/>
-          <polygon points="50,6 84,32 50,40" fill="#fff" fill-opacity=".25"/>
-          <polygon points="50,6 16,32 50,40" fill="#fff" fill-opacity=".12"/>
-          <polygon points="16,32 50,40 28,86" fill="#000" fill-opacity=".15"/>
-          <polygon points="84,32 72,86 50,40" fill="#000" fill-opacity=".10"/>
-          <polygon points="50,40 72,86 28,86" fill="#fff" fill-opacity=".08"/>
-          <polyline points="16,32 50,40 84,32" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1"/>
-        </symbol>
+        <!-- Joule mark: same star + gradient as the Joule assistant in the Soriana Fiori launchpad -->
+        <linearGradient id="jmarkGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a374ff"/><stop offset="1" stop-color="#5b3fd6"/></linearGradient>
+        <symbol id="joule-mark" viewBox="31.6 31.6 33 33"><path fill="url(#jmarkGrad)" d="M61.72,50.1c-6.52,2.2-9.42,5.1-11.63,11.62-.64,1.89-3.33,1.89-3.97,0-2.21-6.52-5.1-9.42-11.63-11.62-1.89-.64-1.89-3.35,0-3.99,6.52-2.2,9.42-5.1,11.63-11.62.64-1.89,3.33-1.89,3.97,0,2.21,6.52,5.1,9.42,11.63,11.62,1.89.64,1.89,3.35,0,3.99Z"/></symbol>
       </defs>
     </svg>
 
     <header class="topbar">
-      <div class="brand"><a class="back" href="/">← Back to twin</a><span class="brand-sep"></span><span class="sap">SAP</span><div><strong>Joule Analytics</strong><span>Embodied AI · Autonomous Operations Twin · SAP BDC Connect</span></div></div>
+      <div class="brand"><a class="back" href="/">← Back to twin</a><span class="brand-sep"></span><span class="sap">SAP</span><svg class="brand-mark" aria-hidden="true"><use href="#joule-mark"/></svg><div><strong>Joule Analytics</strong><span>Embodied AI · Autonomous Operations Twin · SAP BDC Connect</span></div></div>
       <div class="top-tools">
         <span class="tag ai" id="jouleTag">SAP AI Core</span>
         <button id="refresh" class="btn">Refresh</button>
@@ -73,8 +63,8 @@
 
       <aside class="side">
         <section class="panel ai" id="pJoule">
-          <div class="sec"><span class="badge">4</span><span class="name">Joule · SAP AI Core</span><svg class="ai-dot" aria-hidden="true"><use href="#joule-gem"/></svg></div>
-          <div class="ph"><h2>Joule</h2><div class="sub" id="jouleSub">Executive summary · recommendations · risks</div></div>
+          <div class="sec"><span class="badge">4</span><span class="name">Joule · SAP AI Core</span></div>
+          <div class="ph"><h2 class="joule-title"><svg class="jmark" aria-hidden="true"><use href="#joule-mark"/></svg>Joule</h2><div class="sub" id="jouleSub">Executive summary · recommendations · risks</div></div>
           <div id="jouleSummary" class="joule-summary">Waiting for the run…</div>
           <h3>Recommendations</h3>
           <div id="jouleRecs" class="joule-recs"></div>
