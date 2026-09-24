@@ -143,7 +143,7 @@ tr:hover td { background: var(--ghost); }
 .joule-risks { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-2); }
 .joule-risks li { margin-bottom: 4px; }
 .foot { font-size: 10px; font-style: italic; color: var(--muted-2); margin: 12px 0 0; }
-.brand-mark { width: 30px; height: 30px; flex-shrink: 0; filter: drop-shadow(0 6px 20px rgba(120, 88, 255, .4)); }
+.brand-mark { width: 24px; height: 24px; flex-shrink: 0; color: #1d2d3e; }
 .jmark { width: 22px; height: 22px; vertical-align: -3px; margin-right: 8px; filter: drop-shadow(0 3px 8px rgba(120, 88, 255, .35)); }
 .ph h2.joule-title { color: #5b3fd6; font-weight: 700; }
 
