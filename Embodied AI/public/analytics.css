@@ -20,15 +20,18 @@
   --font-medium: "72 Brand Medium", "72", Calibri, "Segoe UI", Arial, system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
-/* White page, purple panels: the page ground is white, every panel keeps the dark Joule
-   gradient, so gauges, text tokens and the gem still sit on a dark surface (guide rule). */
+/* White page, lavender panels: page ground white, panels in Ghost Violet (#EDE9FE) with a
+   Violet Mist border — the same surface as the Joule status chip. Text turns navy/violet and
+   the gauges switch to light tokens; the gem is hidden (guide: gem on dark surfaces only). */
 :root[data-theme="white"] {
   color-scheme: light; --bg: var(--white); --glow: transparent;
+  --title: var(--navy); --ink: var(--navy); --ink-2: var(--gray-dark); --muted: var(--gray-mid); --muted-2: var(--gray-mid); --label: var(--electric);
+  --glass: var(--ghost); --glass-edge: var(--mist); --glass-2: var(--white); --panel-shadow: none;
+  --tag-ai: var(--electric); --tag-off: #b45309;
+  --track: var(--white); --tick: #c4b5fd; --split: var(--lavender); --grid: rgba(107, 33, 200, .12);
   --sap-bg: #0070f2; --sap-ink: var(--white); --rule: var(--mist); --err-bg: #fef2f2; --err-ink: #991b1b;
 }
-:root[data-theme="white"] .panel, :root[data-theme="white"] .gauge-main, :root[data-theme="white"] .tacho {
-  background: linear-gradient(135deg, var(--midnight) 0%, var(--navy) 50%, var(--electric) 120%); border-color: rgba(26, 15, 94, .25); box-shadow: var(--shadow);
-}
+:root[data-theme="white"] .ai-dot { display: none; }
 :root[data-theme="white"] .brand strong { color: var(--navy); }
 :root[data-theme="white"] .brand span { color: var(--electric); }
 :root[data-theme="white"] .brand .back { color: var(--navy); background: var(--white); border-color: var(--mist); }
