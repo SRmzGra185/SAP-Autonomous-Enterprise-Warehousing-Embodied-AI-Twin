@@ -1,8 +1,10 @@
 import { createExceptionUI } from "./exception-ui.js";
+import { createCameraFeed } from "./camera-feed.js";
 
 export function createExecutionUI({ api, getModel, getWorld, getScenario, run, selectScenario, inspectNode, canApprove }) {
   const $ = (id) => document.getElementById(id), put = (id, value) => { $(id).textContent = value; };
   let jobId = null, pending = null, active = null, completed = new Set(), labels = new Map(), events = [];
+  let approvalCamera = null;
   const draftHost = document.createElement("div"), proofHost = document.createElement("div");
   draftHost.id = "exception-draft-host"; proofHost.id = "exception-proof-host";
   $("approval-panel").after(draftHost, proofHost);
@@ -29,7 +31,7 @@ export function createExecutionUI({ api, getModel, getWorld, getScenario, run, s
     }
   }
   function status(text, tone = "idle") { put("mission-status", text); $("mission-status").dataset.tone = tone; }
-  function clearApproval() { pending = null; exceptionUI.endApproval(); $("approval-panel").classList.add("hidden"); }
+  function clearApproval() { pending = null; approvalCamera?.stop(); exceptionUI.endApproval(); $("approval-panel").classList.add("hidden"); }
   async function decide(decision) {
     if (!pending || !jobId) return;
     $("approval-approve").disabled = true; $("approval-reject").disabled = true;
@@ -104,6 +106,8 @@ export function createExecutionUI({ api, getModel, getWorld, getScenario, run, s
         const riskEl = $("approval-risk");
         riskEl.textContent = `RISK: ${risk.toUpperCase()} — ${riskAdvice[risk] || riskAdvice.routine}`;
         riskEl.dataset.risk = risk;
+        approvalCamera ||= createCameraFeed($("approval-camera-canvas"), { label: "H1 CAM · DECISION" });
+        approvalCamera.start();
         put("approval-action", `${event.action} Command: ${event.command}. Intended actor: ${event.intendedActor || "Authorized operator"}.`);
         put("approval-scope", `One simulated action · expires ${new Date(event.expiresAt).toLocaleTimeString()} · no SAP or robot writes. ${event.caseContext ? "SKU " + event.caseContext.sku + " · EPC " + event.caseContext.rfidEpc + " · qty " + event.caseContext.quantity + " → " + event.caseContext.destination + " · rack " + event.caseContext.rackState : ""}`);
         exceptionUI.beginApproval(event);
