@@ -68,7 +68,6 @@ a { color: inherit; }
 /* ---- hero: main gauge + tachometers ---------------------------------- */
 .hero { grid-column: span 8; display: grid; grid-template-columns: 5fr 7fr; gap: 16px; }
 .gauge-main { background: var(--glass); border: 1px solid var(--glass-edge); border-radius: var(--radius); padding: 16px 18px 12px; position: relative; overflow: hidden; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-.gauge-main .gem { position: absolute; right: -28px; top: -18px; width: 150px; height: 150px; opacity: .9; pointer-events: none; filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .20)); }
 .gauge-main .g-l { font: 700 10px var(--font-medium); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 .gauge-main .g-t { font: 400 22px/1.15 var(--font); margin-top: 2px; color: var(--white); }
 .gauge-main .g-chart { height: 260px; width: 100%; }
