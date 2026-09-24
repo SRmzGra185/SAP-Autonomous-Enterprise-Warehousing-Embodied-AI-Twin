@@ -98,7 +98,13 @@ export function createExecutionUI({ api, getModel, getWorld, getScenario, run, s
       }
       if (event.type === "approval_required") {
         pending = event; status("Waiting for your approval", "waiting"); getWorld()?.setFlowState({ running: true, paused: true }); $("approval-panel").classList.remove("hidden");
-        put("approval-title", `${event.stepId} · ${event.label}`); put("approval-action", `${event.action} Command: ${event.command}. Intended actor: ${event.intendedActor || "Authorized operator"}.`);
+        put("approval-title", `${event.stepId} · ${event.label}`);
+        const riskAdvice = { critical: "Physical handling of goods. Verify identity and grip before approving.", risky: "Material movement. Confirm path is clear before approving.", routine: "Data / validation step. Low physical risk." };
+        const risk = event.risk || "routine";
+        const riskEl = $("approval-risk");
+        riskEl.textContent = `RISK: ${risk.toUpperCase()} — ${riskAdvice[risk] || riskAdvice.routine}`;
+        riskEl.dataset.risk = risk;
+        put("approval-action", `${event.action} Command: ${event.command}. Intended actor: ${event.intendedActor || "Authorized operator"}.`);
         put("approval-scope", `One simulated action · expires ${new Date(event.expiresAt).toLocaleTimeString()} · no SAP or robot writes. ${event.caseContext ? "SKU " + event.caseContext.sku + " · EPC " + event.caseContext.rfidEpc + " · qty " + event.caseContext.quantity + " → " + event.caseContext.destination + " · rack " + event.caseContext.rackState : ""}`);
         exceptionUI.beginApproval(event);
         put("approval-error", canApprove ? "The server is paused. Complete the fingerprint and explicitly review this action. Reject remains available without filling the form." : "An approver or administrator must decide."); $("approval-approve").disabled = !canApprove || !exceptionUI.canApprove(); $("approval-reject").disabled = !canApprove;
