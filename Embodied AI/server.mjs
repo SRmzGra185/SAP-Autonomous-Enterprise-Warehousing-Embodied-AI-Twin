@@ -24,7 +24,7 @@ import { runAgentTask, runtimeDescriptor } from "./orchestrator.mjs";
 import { runLayoutOptimization } from "./src/optimizer.mjs";
 import { jouleAssist, jouleDescriptor } from "./src/joule-assistant.mjs";
 import { buildScenarioAnalytics } from "./src/analytics.mjs";
-import { buildLastRunAnalytics, buildLastRoutineAnalytics } from "./src/run-analytics.mjs";
+import { buildLastRunAnalytics, buildLastRoutineAnalytics, buildJouleForJob } from "./src/run-analytics.mjs";
 import { createIsaacBridge } from "./src/isaac-bridge.mjs";
 import { createHumanoidLab, validateTrainInput, validateDeployInput, validateTeleopInput } from "./src/humanoid-lab.mjs";
 import { jouleTeleopAssist, PRESET_PROMPTS as H1_JOULE_PROMPTS } from "./src/humanoid-joule.mjs";
@@ -145,7 +145,7 @@ async function routeRequest(req, res) {
   }
 
   if (pathname.startsWith("/api/")) {
-    const principal = await authenticate(req, config), agentRoute = ["/api/agent/tasks", "/api/joule/chat", "/api/optimizations", "/api/analytics/scenarios", "/api/analytics/last-run"].includes(pathname), rate = limit(`${rateKey(req, principal)}:${agentRoute ? "agent" : "api"}`, agentRoute ? config.rateLimit.agentMax : config.rateLimit.max);
+    const principal = await authenticate(req, config), agentRoute = ["/api/agent/tasks", "/api/joule/chat", "/api/optimizations", "/api/analytics/scenarios", "/api/analytics/last-run/joule"].includes(pathname), rate = limit(`${rateKey(req, principal)}:${agentRoute ? "agent" : "api"}`, agentRoute ? config.rateLimit.agentMax : config.rateLimit.max);
     if (req.method === "GET" && pathname === "/api/joule/descriptor") return json(res, 200, jouleDescriptor(config, recipeDescriptor()), origin, rate);
     if (req.method === "POST" && pathname === "/api/joule/chat") {
       if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
@@ -262,16 +262,25 @@ async function routeRequest(req, res) {
       const has = Boolean(lastSimulationJob(principal) || lastRoutineJob(principal));
       return json(res, 200, { available: has }, origin, rate);
     }
-    if (req.method === "GET" && pathname === "/api/analytics/last-run") {
+    if (req.method === "GET" && (pathname === "/api/analytics/last-run" || pathname === "/api/analytics/last-run/joule")) {
       const simJob = lastSimulationJob(principal), routineJob = lastRoutineJob(principal);
       const simAt = simJob ? simJob.events.find((event) => event.type === "job_complete")?.at : null;
       const routineAt = routineJob ? routineJob.events.find((event) => event.type === "job_complete")?.at : null;
       if (!simAt && !routineAt) return json(res, 404, { error: "No completed run yet for this tenant.", code: "no_simulation_run", hint: "Run a simulation or a routine from the Routine Lab first." }, origin, rate);
       const useRoutine = Boolean(routineAt) && (!simAt || routineAt > simAt);
+      const target = useRoutine
+        ? { job: routineJob, kind: "robot_routine", scenario: robotScenarioById(routineJob.result?.scenarioId), kpis: computeLogisticsKpis(routineJob) }
+        : { job: simJob, kind: "simulation", model: scopeModel(tenantModel(principal), principal) };
+      // /joule is the slow half (AI Core call, cached per jobId); /last-run paints the KPIs instantly.
+      if (pathname.endsWith("/joule")) {
+        const out = await buildJouleForJob(config, principal, target);
+        if (!out.cached) record("last_run_joule_generated", { jobId: target.job.id, kind: target.kind, joule: Boolean(out.joule), result: out.joule ? "generated" : "unavailable" }, principal);
+        return json(res, 200, { jobId: target.job.id, kind: target.kind, ...out }, origin, rate);
+      }
       const analytics = useRoutine
-        ? await buildLastRoutineAnalytics(config, principal, { job: routineJob, scenario: robotScenarioById(routineJob.result?.scenarioId), kpis: computeLogisticsKpis(routineJob) })
-        : await buildLastRunAnalytics(config, principal, { job: simJob, model: scopeModel(tenantModel(principal), principal) });
-      record("last_run_analytics_generated", { jobId: analytics.jobId, kind: analytics.kind, joule: Boolean(analytics.joule), result: "generated" }, principal);
+        ? await buildLastRoutineAnalytics(config, principal, target)
+        : await buildLastRunAnalytics(config, principal, target);
+      record("last_run_analytics_generated", { jobId: analytics.jobId, kind: analytics.kind, result: "generated" }, principal);
       return json(res, 200, analytics, origin, rate);
     }
     if (req.method === "POST" && pathname === "/api/optimizations") {

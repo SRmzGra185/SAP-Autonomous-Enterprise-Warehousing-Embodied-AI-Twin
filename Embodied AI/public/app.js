@@ -633,6 +633,10 @@ function consumeEvent(event) {
     logLine("orchestrator", `completed ${event.summary.completed} entities; p95 cycle ${event.summary.p95Cycle}`);
     confirmOptimizerResult(event.summary);
     setAnalyticsReady(true);
+    // Auto-open the dashboard once the numbers are in: only for runs started
+    // from this tab (state.currentJob), so a reload that re-attaches to an
+    // old stream never bounces the user away from the twin.
+    if (state.currentJob === event.id) { logLine("analytics", "opening Joule analytics for this run…"); setTimeout(() => { window.location.assign("/analytics.html"); }, 900); }
   }
   if (event.type === "orchestrator_analysis") logLine(plannerLabel(), event.provider && event.provider !== "mock" ? `analyzing with ${event.model} / ${event.effort}` : (event.analysis || event.message || "Preparing a bounded operations plan; Joule NOT CONNECTED"));
   if (event.type === "fallback_activated") logLine("fallback", `${event.from} → ${event.to}: ${event.reason}${event.detail ? ` (${event.detail})` : ""}`, true);

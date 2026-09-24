@@ -61,7 +61,11 @@ export async function jouleRunAnalysis(config, { result, nodes, principal }) {
   };
 }
 
-export async function buildLastRunAnalytics(config, principal, { job, model }) {
+// The KPIs are ready in milliseconds; the Joule summary is an AI Core call
+// that takes seconds. By default the payload ships without Joule so the page
+// can paint immediately, and the client fetches the summary separately via
+// buildJouleForJob (cached per jobId — a completed run never changes).
+export async function buildLastRunAnalytics(config, principal, { job, model, includeJoule = false }) {
   const result = job.result;
   const summary = runSummary(model, result);
   const payload = {
@@ -77,11 +81,30 @@ export async function buildLastRunAnalytics(config, principal, { job, model }) {
     maxUtilization: summary.maxUtilization,
     bottleneck: summary.bottleneck,
     provider: config.orchestrator.enabled ? config.orchestrator.provider : "mock",
-    joule: null, jouleError: null
+    joule: null, jouleError: null, joulePending: config.orchestrator.enabled && !includeJoule
   };
-  try { payload.joule = await jouleRunAnalysis(config, { result, nodes: summary.nodes, principal }); }
-  catch (error) { payload.jouleError = String(error.message || error).slice(0, 200); }
+  if (includeJoule) Object.assign(payload, await buildJouleForJob(config, principal, { job, kind: "simulation", model }));
   return payload;
+}
+
+const jouleCache = new Map(); // jobId -> { joule, jouleError }
+const JOULE_CACHE_MAX = 64;
+
+export async function buildJouleForJob(config, principal, { job, kind, model, scenario, kpis }) {
+  const cached = jouleCache.get(job.id);
+  if (cached) return { ...cached, cached: true };
+  const out = { joule: null, jouleError: null };
+  try {
+    out.joule = kind === "robot_routine"
+      ? await jouleRoutineAnalysis(config, { scenario, kpis, job, principal })
+      : await jouleRunAnalysis(config, { result: job.result, nodes: runSummary(model, job.result).nodes, principal });
+  } catch (error) { out.jouleError = String(error.message || error).slice(0, 200); }
+  // Only cache real answers; a transient provider error should be retried on the next request.
+  if (out.joule) {
+    if (jouleCache.size >= JOULE_CACHE_MAX) jouleCache.delete(jouleCache.keys().next().value);
+    jouleCache.set(job.id, out);
+  }
+  return { ...out, cached: false };
 }
 
 // --- Workcell routines ("Run in twin") — a different data shape: no DES nodes/
@@ -117,7 +140,7 @@ export async function jouleRoutineAnalysis(config, { scenario, kpis, job, princi
   };
 }
 
-export async function buildLastRoutineAnalytics(config, principal, { job, scenario, kpis }) {
+export async function buildLastRoutineAnalytics(config, principal, { job, scenario, kpis, includeJoule = false }) {
   const unmeasuredKpis = (scenario?.kpiProfile?.metrics || []).map((metric) => metric.name).filter((name) => !["Picking and order cycle", "Queue and dock dwell"].includes(name));
   const payload = {
     kind: "robot_routine",
@@ -129,9 +152,8 @@ export async function buildLastRoutineAnalytics(config, principal, { job, scenar
     kpis,
     unmeasuredKpis,
     provider: config.orchestrator.enabled ? config.orchestrator.provider : "mock",
-    joule: null, jouleError: null
+    joule: null, jouleError: null, joulePending: config.orchestrator.enabled && !includeJoule
   };
-  try { payload.joule = await jouleRoutineAnalysis(config, { scenario, kpis, job, principal }); }
-  catch (error) { payload.jouleError = String(error.message || error).slice(0, 200); }
+  if (includeJoule) Object.assign(payload, await buildJouleForJob(config, principal, { job, kind: "robot_routine", scenario, kpis }));
   return payload;
 }

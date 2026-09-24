@@ -3,30 +3,40 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#1a2b3c" />
-    <title>Joule Analytics · SAP BDC Connect</title>
+    <meta name="theme-color" content="#0f1114" />
+    <title>Joule Analytics · Embodied AI Twin</title>
     <link rel="stylesheet" href="/analytics.css" />
     <script src="/vendor/echarts.min.js" defer></script>
     <script src="/analytics.js" defer></script>
   </head>
   <body>
     <header class="topbar">
-      <div class="brand"><a class="back" href="/">← Back to twin</a><span class="brand-sep"></span><div><strong>JOULE ANALYTICS</strong><span>SAP BDC Connect · Autonomous Operations Twin</span></div></div>
+      <div class="brand"><a class="back" href="/">← Back to twin</a><span class="brand-sep"></span><div><strong>JOULE ANALYTICS</strong><span>Embodied AI · Autonomous Operations Twin · SAP BDC Connect</span></div></div>
       <div class="top-tools">
         <span class="tag ai" id="jouleTag">SAP AI Core</span>
         <button id="refresh" class="btn">Refresh</button>
       </div>
     </header>
 
-    <div class="sub-bar"><span id="mainSub">Loading the most recent simulation…</span><span class="muted" id="genAt"></span></div>
+    <div class="sub-bar"><span id="mainSub">Loading the most recent run…</span><span class="muted" id="genAt"></span></div>
 
     <div id="empty" class="panel" hidden>
-      <div class="ph"><div><h2>No simulation yet</h2></div></div>
-      <p>You haven't run a simulation for this tenant yet. Go to the <a href="/">Routine Lab</a> and run one — this dashboard will then show its KPIs and Joule's analysis.</p>
+      <div class="ph"><div><h2>No run yet</h2></div></div>
+      <p>You haven't run anything for this tenant yet. Go to the <a href="/">twin</a>, run an experiment or a routine — this dashboard opens itself when it completes.</p>
     </div>
 
     <div class="layout" id="layout" hidden>
       <div class="main">
+        <section class="hero" id="hero">
+          <div class="gauge-main">
+            <div class="g-l" id="gaugeLabel">Mean utilization</div>
+            <div class="g-t" id="gaugeTitle">Fleet load</div>
+            <div id="gaugeMain" class="g-chart"></div>
+            <div class="g-foot"><span id="gaugeFootL"></span><span id="gaugeFootR"></span></div>
+          </div>
+          <div class="tachos" id="tachos"></div>
+        </section>
+
         <div class="kpis" id="kpis"></div>
 
         <section class="panel" id="pUtil">
@@ -43,7 +53,7 @@
       <aside class="side">
         <section class="panel ai" id="pJoule">
           <div class="ph"><div><h2>Joule</h2><div class="sub" id="jouleSub">Executive summary · recommendations · risks</div></div><span class="ai-dot"></span></div>
-          <div id="jouleSummary" class="joule-summary">Waiting for the simulation…</div>
+          <div id="jouleSummary" class="joule-summary">Waiting for the run…</div>
           <h3>Recommendations</h3>
           <div id="jouleRecs" class="joule-recs"></div>
           <h3>Risks</h3>
@@ -53,7 +63,7 @@
       </aside>
     </div>
 
-    <footer><span id="footSrc">Source: SAP Autonomous Operations Twin · DES engine · your most recent Routine Lab run</span><span>Intelligence: SAP AI Core · Joule</span><span>Simulated data for demonstration purposes</span></footer>
+    <footer><span id="footSrc">Source: SAP Autonomous Operations Twin · DES engine · your most recent run</span><span>Intelligence: SAP AI Core · Joule</span><span>Simulated data for demonstration purposes</span></footer>
     <div id="error" class="error" hidden></div>
   </body>
 </html>
