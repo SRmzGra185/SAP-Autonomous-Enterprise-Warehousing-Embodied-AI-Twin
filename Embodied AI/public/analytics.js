@@ -7,7 +7,11 @@
   const charts = {};
   const ch = (id) => (charts[id] ||= echarts.init(document.getElementById(id), null, { renderer: "canvas" }));
   const state = { data: null, busy: false };
-  const DISPLAY = () => css("--font-display");
+  const DISPLAY = () => css("--font-medium");
+  // Slide Design Reference palette: progress in Vivid Purple → Sky, zones only ever use the
+  // three status colours (Green / Amber / Red) so a surface never exceeds 3 accents.
+  const PAL = () => ({ navy: css("--navy"), violet: css("--electric"), vivid: css("--vivid"), lavender: css("--lavender"), sky: css("--sky"), ice: css("--ice"),
+    mist: css("--mist"), green: css("--green"), amber: css("--amber"), red: css("--red"), ink: css("--ink"), muted: css("--muted"), ink2: css("--ink-2") });
 
   // ---- small pieces ------------------------------------------------------
 
@@ -26,7 +30,7 @@
     const v = el("div", "k-v", value); if (unit) v.append(el("small", null, unit)); card.append(v);
     if (delta) card.append(el("div", `k-d ${deltaTone || ""}`, delta));
     card.append(el("div", "k-c", caption || ""));
-    if (sparkValues?.length > 1) card.insertAdjacentHTML("beforeend", spark(sparkValues, sparkColor || css("--lime")));
+    if (sparkValues?.length > 1) card.insertAdjacentHTML("beforeend", spark(sparkValues, sparkColor || css("--electric")));
     return card;
   }
 
@@ -38,14 +42,16 @@
   }
 
   // ---- gauges ------------------------------------------------------------
-  // Shared visual language for every dial: dark face, lime arc, thin tick
-  // ring, a pointer, and the value big in the centre. Colour zones are the
-  // one thing that differs per KPI.
+  // Shared visual language for every dial (SAP Slide Design Reference): ghost
+  // track on the dark violet gradient, Sky→Vivid Purple progress arc, lavender
+  // ticks, white pointer, value large in 72 Brand Medium. Colour zones are the
+  // one thing that differs per KPI and only use the three status colours.
 
   // `radius` is a percentage of half the shorter side; ECharts takes a number
   // or a "N%" string only (no calc()), so the inner ring is derived numerically.
   function dial(id, { value, min, max, unit, zones, formatter, decimals = 0, radius = 88, center = ["50%", "62%"], fontSize = 34, startAngle = 210, endAngle = -30, title }) {
-    const ink = css("--ink"), muted = css("--muted"), lime = css("--lime"), face = "#0b0d10";
+    const P = PAL(), ink = P.ink, muted = P.muted, face = P.navy;
+    const track = "rgba(255,255,255,0.10)", tick = "rgba(221,214,254,0.35)", split = "rgba(221,214,254,0.6)";
     const outer = `${radius}%`, inner = `${Math.max(10, radius - 9)}%`;
     ch(id).setOption({
       backgroundColor: "transparent",
@@ -57,17 +63,17 @@
           pointer: { show: false }, detail: { show: false }, data: [{ value }] },
         // progress arc + pointer + detail (inner)
         { type: "gauge", startAngle, endAngle, min, max, radius: inner, center, splitNumber: 5,
-          progress: { show: true, width: 12, roundCap: true, itemStyle: { color: lime, shadowBlur: 14, shadowColor: lime } },
-          axisLine: { lineStyle: { width: 12, color: [[1, "#1a1e24"]] } },
-          axisTick: { distance: -22, length: 4, lineStyle: { color: "#3a4048", width: 1 } },
-          splitLine: { distance: -26, length: 9, lineStyle: { color: "#4a515a", width: 2 } },
+          progress: { show: true, width: 12, roundCap: true, itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: P.sky }, { offset: 1, color: P.vivid }]), shadowBlur: 10, shadowColor: "rgba(147,51,234,0.45)" } },
+          axisLine: { lineStyle: { width: 12, color: [[1, track]] } },
+          axisTick: { distance: -22, length: 4, lineStyle: { color: tick, width: 1 } },
+          splitLine: { distance: -26, length: 9, lineStyle: { color: split, width: 2 } },
           axisLabel: { distance: -8, color: muted, fontSize: 9, fontFamily: css("--font-mono"), formatter: (v) => formatter ? formatter(v, true) : `${Math.round(v)}` },
-          pointer: { icon: "path://M2090.36389,615.30999 L2090.36389,615.30999 C2091.48372,615.30999 2092.40383,616.194028 2092.44859,617.312956 L2096.90698,728.755929 C2097.05155,732.369577 2094.2393,735.416212 2090.62566,735.56078 C2090.53845,735.564269 2090.45117,735.566014 2090.36389,735.566014 L2090.36389,735.566014 C2086.74736,735.566014 2083.81557,732.63423 2083.81557,729.017692 C2083.81557,728.930412 2083.81732,728.84314 2083.82081,728.755929 L2088.2792,617.312956 C2088.32396,616.194028 2089.24407,615.30999 2090.36389,615.30999 Z", length: "62%", width: 8, offsetCenter: [0, 0], itemStyle: { color: ink, shadowBlur: 8, shadowColor: "rgba(0,0,0,.6)" } },
-          anchor: { show: true, size: 14, itemStyle: { color: face, borderColor: lime, borderWidth: 2 } },
+          pointer: { icon: "path://M2090.36389,615.30999 L2090.36389,615.30999 C2091.48372,615.30999 2092.40383,616.194028 2092.44859,617.312956 L2096.90698,728.755929 C2097.05155,732.369577 2094.2393,735.416212 2090.62566,735.56078 C2090.53845,735.564269 2090.45117,735.566014 2090.36389,735.566014 L2090.36389,735.566014 C2086.74736,735.566014 2083.81557,732.63423 2083.81557,729.017692 C2083.81557,728.930412 2083.81732,728.84314 2083.82081,728.755929 L2088.2792,617.312956 C2088.32396,616.194028 2089.24407,615.30999 2090.36389,615.30999 Z", length: "62%", width: 8, offsetCenter: [0, 0], itemStyle: { color: ink, shadowBlur: 6, shadowColor: "rgba(13,8,51,.5)" } },
+          anchor: { show: true, size: 14, itemStyle: { color: face, borderColor: P.lavender, borderWidth: 2 } },
           // Value sits in the open mouth of the arc (below centre, like a car
           // dashboard) so it never collides with the arc or the card title.
-          title: { show: Boolean(title), offsetCenter: [0, "62%"], color: muted, fontSize: 10, fontFamily: css("--font-body") },
-          detail: { valueAnimation: true, offsetCenter: [0, "32%"], color: ink, fontSize, fontWeight: 700, fontFamily: DISPLAY(), formatter: (v) => formatter ? formatter(v, false) : `${v.toFixed(decimals)}${unit || ""}` },
+          title: { show: Boolean(title), offsetCenter: [0, "62%"], color: muted, fontSize: 10, fontFamily: css("--font") },
+          detail: { valueAnimation: true, offsetCenter: [0, "32%"], color: ink, fontSize, fontWeight: 500, fontFamily: DISPLAY(), formatter: (v) => formatter ? formatter(v, false) : `${v.toFixed(decimals)}${unit || ""}` },
           data: [{ value, name: title || "" }] }
       ]
     }, true);
@@ -75,10 +81,10 @@
 
   function renderHero() {
     const { result, meanUtilization, maxUtilization, bottleneck } = state.data;
-    const lime = css("--lime"), amber = css("--amber"), neg = css("--neg"), comp = css("--comp");
-    // Main dial: utilization 0..100 %, healthy 40–85, red above 85 (bottleneck line the twin already uses)
+    const { green, amber, red } = PAL();
+    // Main dial: utilization 0..100 %, amber under 40 (idle capital), green 40–85, red above 85 (bottleneck line the twin already uses)
     dial("gaugeMain", { value: (meanUtilization || 0) * 100, min: 0, max: 100, radius: 92, center: ["50%", "60%"], fontSize: 44,
-      zones: [[0.4, comp], [0.85, lime], [1, neg]], formatter: (v, axis) => axis ? `${Math.round(v)}` : `${v.toFixed(1)}%`, title: "meta ≤ 85 %" });
+      zones: [[0.4, amber], [0.85, green], [1, red]], formatter: (v, axis) => axis ? `${Math.round(v)}` : `${v.toFixed(1)}%`, title: "target ≤ 85 %" });
     $("#gaugeFootL").innerHTML = `max <b>${pct(maxUtilization)}</b> · ${bottleneck ? bottleneck.name : "—"}`;
     $("#gaugeFootR").innerHTML = `${state.data.nodes.length} nodes · <b>${result.completed}</b> orders`;
 
@@ -90,9 +96,9 @@
     const cycleCeil = Math.max(result.p95Cycle * 1.25, ...reps.map((r) => r.orderP95CycleSeconds || 0)) || 1;
     const wrap = $("#tachos"); wrap.replaceChildren();
     const specs = [
-      { id: "tachoThroughput", label: "Throughput", caption: `${fmt(result.entities, 0)} orders · ${reps.length || result.runs} reps`, value: result.throughputPerHour, min: 0, max: Math.ceil(maxThroughput / 50) * 50, unit: "/h", decimals: 0, zones: [[0.35, neg], [0.65, amber], [1, lime]] },
-      { id: "tachoCycle", label: "Avg cycle", caption: `CI95 ${result.replicationMeanCycleSeconds?.ci95 ? `${fmt(result.replicationMeanCycleSeconds.ci95.lower, 0)}–${fmt(result.replicationMeanCycleSeconds.ci95.upper, 0)} s` : "—"}`, value: result.averageCycle, min: 0, max: Math.ceil(cycleCeil / 20) * 20, unit: "s", decimals: 0, zones: [[0.5, lime], [0.8, amber], [1, neg]] },
-      { id: "tachoP95", label: "P95 cycle", caption: `avg queue ${fmt(result.averageQueuedSeconds, 0)} s/order`, value: result.p95Cycle, min: 0, max: Math.ceil(cycleCeil / 20) * 20, unit: "s", decimals: 0, zones: [[0.5, lime], [0.8, amber], [1, neg]] }
+      { id: "tachoThroughput", label: "Throughput", caption: `${fmt(result.entities, 0)} orders · ${reps.length || result.runs} reps`, value: result.throughputPerHour, min: 0, max: Math.ceil(maxThroughput / 50) * 50, unit: "/h", decimals: 0, zones: [[0.35, red], [0.65, amber], [1, green]] },
+      { id: "tachoCycle", label: "Avg cycle", caption: `CI95 ${result.replicationMeanCycleSeconds?.ci95 ? `${fmt(result.replicationMeanCycleSeconds.ci95.lower, 0)}–${fmt(result.replicationMeanCycleSeconds.ci95.upper, 0)} s` : "—"}`, value: result.averageCycle, min: 0, max: Math.ceil(cycleCeil / 20) * 20, unit: "s", decimals: 0, zones: [[0.5, green], [0.8, amber], [1, red]] },
+      { id: "tachoP95", label: "P95 cycle", caption: `avg queue ${fmt(result.averageQueuedSeconds, 0)} s/order`, value: result.p95Cycle, min: 0, max: Math.ceil(cycleCeil / 20) * 20, unit: "s", decimals: 0, zones: [[0.5, green], [0.8, amber], [1, red]] }
     ];
     for (const spec of specs) {
       const card = el("div", "tacho"); card.append(el("div", "t-l", spec.label));
@@ -112,7 +118,7 @@
     const bottle = bottleneck && bottleneck.utilization > 0.85;
     $("#kpis").replaceChildren(
       kpiCard("Throughput", fmt(result.throughputPerHour, 0), "orders/h", null, "", `${result.entities} orders · ${result.runs} replications`, reps.map((r) => r.throughputPerHour)),
-      kpiCard("Avg cycle", fmt(result.averageCycle, 0), "s", null, "", `seed ${result.seed}`, reps.map((r) => r.averageCycle), css("--j3")),
+      kpiCard("Avg cycle", fmt(result.averageCycle, 0), "s", null, "", `seed ${result.seed}`, reps.map((r) => r.averageCycle), css("--sky")),
       kpiCard("P95 cycle", fmt(result.p95Cycle, 0), "s", null, "", ci ? `CI95 ${fmt(ci.lower, 0)}–${fmt(ci.upper, 0)} s` : "", reps.map((r) => r.orderP95CycleSeconds), css("--amber")),
       kpiCard("Mean utilization", pct(meanUtilization), "", bottle ? "▲ bottleneck risk" : "● healthy load", bottle ? "neg" : "pos", bottleneck ? `top node: ${bottleneck.name}` : "no nodes"),
       jouleCard()
@@ -121,15 +127,15 @@
 
   function renderUtilization() {
     const { nodes, bottleneck, result } = state.data;
-    const lime = css("--lime"), neg = css("--neg"), comp = css("--comp"), muted = css("--muted"), ink2 = css("--ink-2"), line = css("--line");
+    const { violet, sky, green, amber, red, muted, ink2, navy } = PAL(); const line = "rgba(221,214,254,0.18)";
     $("#utilSub").textContent = `bottleneck ${bottleneck ? `${bottleneck.name} at ${pct(bottleneck.utilization)}` : "none"} · avg queue ${fmt(result.averageQueuedSeconds, 0)} s/order`;
     ch("utilization").setOption({
       backgroundColor: "transparent", animationDuration: 700,
       grid: { left: 8, right: 16, top: 12, bottom: 8, containLabel: true },
-      tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, backgroundColor: "#15181d", borderColor: "#2f353d", textStyle: { color: css("--ink") }, formatter: (items) => { const node = nodes[items[0].dataIndex]; return `<b>${node.name}</b><br/>utilization ${pct(node.utilization)}<br/>capacity ${node.capacity} · service ${node.service ?? "—"} s<br/>queued ${fmt(node.queuedSeconds, 0)} s`; } },
+      tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, backgroundColor: "#ffffff", borderColor: css("--mist"), textStyle: { color: navy }, formatter: (items) => { const node = nodes[items[0].dataIndex]; return `<b>${node.name}</b><br/>utilization ${pct(node.utilization)}<br/>capacity ${node.capacity} · service ${node.service ?? "—"} s<br/>queued ${fmt(node.queuedSeconds, 0)} s`; } },
       xAxis: { type: "value", max: 1, axisLabel: { color: muted, fontSize: 10, formatter: (value) => `${Math.round(value * 100)}%` }, splitLine: { lineStyle: { color: line } } },
       yAxis: { type: "category", inverse: true, data: nodes.map((node) => node.name), axisTick: { show: false }, axisLine: { show: false }, axisLabel: { color: ink2, fontSize: 10, width: 150, overflow: "truncate" } },
-      series: [{ type: "bar", data: nodes.map((node) => ({ value: node.utilization, itemStyle: { color: node.utilization > 0.85 ? neg : node.utilization < 0.4 ? comp : lime, borderRadius: [0, 4, 4, 0], shadowBlur: node.utilization > 0.4 ? 10 : 0, shadowColor: node.utilization > 0.85 ? neg : lime } })), barWidth: 14, label: { show: true, position: "right", color: css("--ink"), fontSize: 10, fontFamily: css("--font-mono"), formatter: (params) => pct(params.value) }, markLine: { silent: true, symbol: "none", lineStyle: { color: neg, type: "dashed" }, data: [{ xAxis: 0.85, label: { formatter: "85% risk", color: neg, fontSize: 10 } }] } }]
+      series: [{ type: "bar", data: nodes.map((node) => ({ value: node.utilization, itemStyle: { color: node.utilization > 0.85 ? red : node.utilization < 0.4 ? amber : new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: sky }, { offset: 1, color: violet }]), borderRadius: [0, 4, 4, 0] } })), barWidth: 14, label: { show: true, position: "right", color: css("--ink"), fontSize: 10, fontFamily: css("--font-mono"), formatter: (params) => pct(params.value) }, markLine: { silent: true, symbol: "none", lineStyle: { color: red, type: "dashed" }, data: [{ xAxis: 0.85, label: { formatter: "85% risk", color: red, fontSize: 10 } }] } }]
     }, true);
   }
 
@@ -177,15 +183,15 @@
   function renderRoutineView() {
     const { scenario, mode, cycles, kpis, unmeasuredKpis } = state.data;
     const picking = kpis?.pickingAndOrderCycle, dwell = kpis?.queueAndDockDwell;
-    const lime = css("--lime"), amber = css("--amber"), neg = css("--neg");
+    const { green, amber, red } = PAL(); const none = "rgba(255,255,255,0.10)";
     $("#gaugeLabel").textContent = "Order → dispatch"; $("#gaugeTitle").textContent = scenario?.name || "Routine";
     if (picking?.orderToDispatchSeconds != null) {
       const ceil = Math.max(10, Math.ceil(picking.orderToDispatchSeconds * 1.6 / 5) * 5);
-      dial("gaugeMain", { value: picking.orderToDispatchSeconds, min: 0, max: ceil, radius: 92, center: ["50%", "60%"], fontSize: 44, zones: [[0.5, lime], [0.8, amber], [1, neg]], formatter: (v, axis) => axis ? `${Math.round(v)}` : `${v.toFixed(1)} s`, title: `${kpis.cyclesMeasured} cycle${kpis.cyclesMeasured === 1 ? "" : "s"} measured` });
+      dial("gaugeMain", { value: picking.orderToDispatchSeconds, min: 0, max: ceil, radius: 92, center: ["50%", "60%"], fontSize: 44, zones: [[0.5, green], [0.8, amber], [1, red]], formatter: (v, axis) => axis ? `${Math.round(v)}` : `${v.toFixed(1)} s`, title: `${kpis.cyclesMeasured} cycle${kpis.cyclesMeasured === 1 ? "" : "s"} measured` });
       $("#gaugeFootL").innerHTML = `task → picking <b>${fmt(picking.taskToPickingSeconds, 1)} s</b>`;
       $("#gaugeFootR").innerHTML = `${mode} · ${cycles} cycle${cycles === 1 ? "" : "s"}`;
     } else {
-      dial("gaugeMain", { value: 0, min: 0, max: 1, radius: 92, center: ["50%", "60%"], fontSize: 30, zones: [[1, "#1a1e24"]], formatter: () => "—", title: "not measured for this scenario" });
+      dial("gaugeMain", { value: 0, min: 0, max: 1, radius: 92, center: ["50%", "60%"], fontSize: 30, zones: [[1, none]], formatter: () => "—", title: "not measured for this scenario" });
       $("#gaugeFootL").innerHTML = `<b>${scenario?.domain || ""}</b>`; $("#gaugeFootR").innerHTML = `${mode} · ${cycles} cycle${cycles === 1 ? "" : "s"}`;
     }
     const wrap = $("#tachos"); wrap.replaceChildren();
@@ -200,7 +206,7 @@
       const chart = el("div", "t-chart"); chart.id = spec.id; card.append(chart);
       card.append(el("div", "t-c", spec.caption)); wrap.append(card);
     }
-    for (const spec of specs) dial(spec.id, { value: spec.value ?? 0, min: 0, max: ceil, radius: 96, center: ["50%", "64%"], fontSize: 22, zones: spec.value == null ? [[1, "#1a1e24"]] : [[0.5, lime], [0.8, amber], [1, neg]], formatter: (v, axis) => axis ? `${v.toFixed(1)}` : (spec.value == null ? "—" : `${v.toFixed(2)} s`) });
+    for (const spec of specs) dial(spec.id, { value: spec.value ?? 0, min: 0, max: ceil, radius: 96, center: ["50%", "64%"], fontSize: 22, zones: spec.value == null ? [[1, none]] : [[0.5, green], [0.8, amber], [1, red]], formatter: (v, axis) => axis ? `${v.toFixed(1)}` : (spec.value == null ? "—" : `${v.toFixed(2)} s`) });
     $("#hero").hidden = false;
     $("#kpis").replaceChildren(
       kpiCard("Task → picking", picking ? fmt(picking.taskToPickingSeconds, 1) : "—", "s", null, "", `${cycles} cycle${cycles === 1 ? "" : "s"} · ${mode}`),

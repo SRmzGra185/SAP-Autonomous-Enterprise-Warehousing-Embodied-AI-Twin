@@ -3,15 +3,33 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0f1114" />
+    <meta name="theme-color" content="#1a0f5e" />
     <title>Joule Analytics · Embodied AI Twin</title>
     <link rel="stylesheet" href="/analytics.css" />
     <script src="/vendor/echarts.min.js" defer></script>
     <script src="/analytics.js" defer></script>
   </head>
   <body>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+      <defs>
+        <!-- Joule gem: crystal with translucent facets (guide: light facet white 25 %, dark facet black 15 %, blue-violet gradient) -->
+        <linearGradient id="gemBody" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset=".55" stop-color="#6b21c8"/><stop offset="1" stop-color="#9333ea"/></linearGradient>
+        <radialGradient id="gemHalo" cx="50%" cy="50%" r="50%"><stop offset="0" stop-color="#9333ea" stop-opacity=".55"/><stop offset=".6" stop-color="#9333ea" stop-opacity="0"/></radialGradient>
+        <symbol id="joule-gem" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="50" fill="url(#gemHalo)"/>
+          <polygon points="50,6 84,32 72,86 28,86 16,32" fill="url(#gemBody)"/>
+          <polygon points="50,6 84,32 50,40" fill="#fff" fill-opacity=".25"/>
+          <polygon points="50,6 16,32 50,40" fill="#fff" fill-opacity=".12"/>
+          <polygon points="16,32 50,40 28,86" fill="#000" fill-opacity=".15"/>
+          <polygon points="84,32 72,86 50,40" fill="#000" fill-opacity=".10"/>
+          <polygon points="50,40 72,86 28,86" fill="#fff" fill-opacity=".08"/>
+          <polyline points="16,32 50,40 84,32" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="1"/>
+        </symbol>
+      </defs>
+    </svg>
+
     <header class="topbar">
-      <div class="brand"><a class="back" href="/">← Back to twin</a><span class="brand-sep"></span><div><strong>JOULE ANALYTICS</strong><span>Embodied AI · Autonomous Operations Twin · SAP BDC Connect</span></div></div>
+      <div class="brand"><a class="back" href="/">← Back to twin</a><span class="brand-sep"></span><span class="sap">SAP</span><div><strong>Joule Analytics</strong><span>Embodied AI · Autonomous Operations Twin · SAP BDC Connect</span></div></div>
       <div class="top-tools">
         <span class="tag ai" id="jouleTag">SAP AI Core</span>
         <button id="refresh" class="btn">Refresh</button>
@@ -21,7 +39,8 @@
     <div class="sub-bar"><span id="mainSub">Loading the most recent run…</span><span class="muted" id="genAt"></span></div>
 
     <div id="empty" class="panel" hidden>
-      <div class="ph"><div><h2>No run yet</h2></div></div>
+      <div class="sec"><span class="badge">1</span><span class="name">Joule Analytics</span></div>
+      <div class="ph"><h2>No run yet</h2></div>
       <p>You haven't run anything for this tenant yet. Go to the <a href="/">twin</a>, run an experiment or a routine — this dashboard opens itself when it completes.</p>
     </div>
 
@@ -29,7 +48,8 @@
       <div class="main">
         <section class="hero" id="hero">
           <div class="gauge-main">
-            <div class="g-l" id="gaugeLabel">Mean utilization</div>
+            <svg class="gem" aria-hidden="true"><use href="#joule-gem"/></svg>
+            <div class="sec"><span class="badge">1</span><span class="name" id="gaugeLabel">Mean utilization</span></div>
             <div class="g-t" id="gaugeTitle">Fleet load</div>
             <div id="gaugeMain" class="g-chart"></div>
             <div class="g-foot"><span id="gaugeFootL"></span><span id="gaugeFootR"></span></div>
@@ -40,19 +60,22 @@
         <div class="kpis" id="kpis"></div>
 
         <section class="panel" id="pUtil">
-          <div class="ph"><div><h2>Resource utilization by node</h2><div class="sub" id="utilSub"></div></div></div>
+          <div class="sec"><span class="badge">2</span><span class="name">Resources</span></div>
+          <div class="ph"><h2>Resource utilization by node</h2><div class="sub" id="utilSub"></div></div>
           <div id="utilization" class="chart tall"></div>
         </section>
 
         <section class="panel" id="pTable">
-          <div class="ph"><div><h2>Node detail</h2><div class="sub">This run · seconds · replication means</div></div></div>
+          <div class="sec"><span class="badge">3</span><span class="name">Detail</span></div>
+          <div class="ph"><h2>Node detail</h2><div class="sub">This run · seconds · replication means</div></div>
           <div class="table-wrap"><table id="detail"><thead><tr><th>Node</th><th>Kind</th><th class="num">Capacity</th><th class="num">Utilization</th><th class="num">Queued s</th><th class="num">Busy s</th></tr></thead><tbody></tbody></table></div>
         </section>
       </div>
 
       <aside class="side">
         <section class="panel ai" id="pJoule">
-          <div class="ph"><div><h2>Joule</h2><div class="sub" id="jouleSub">Executive summary · recommendations · risks</div></div><span class="ai-dot"></span></div>
+          <div class="sec"><span class="badge">4</span><span class="name">Joule · SAP AI Core</span><svg class="ai-dot" aria-hidden="true"><use href="#joule-gem"/></svg></div>
+          <div class="ph"><h2>Joule</h2><div class="sub" id="jouleSub">Executive summary · recommendations · risks</div></div>
           <div id="jouleSummary" class="joule-summary">Waiting for the run…</div>
           <h3>Recommendations</h3>
           <div id="jouleRecs" class="joule-recs"></div>
@@ -63,7 +86,7 @@
       </aside>
     </div>
 
-    <footer><span id="footSrc">Source: SAP Autonomous Operations Twin · DES engine · your most recent run</span><span>Intelligence: SAP AI Core · Joule</span><span>Simulated data for demonstration purposes</span></footer>
+    <footer><span>INTERNAL – SAP and Partners Only</span><span id="footSrc">Source: SAP Autonomous Operations Twin · DES engine · your most recent run · Intelligence: SAP AI Core · Joule</span><span>Simulated data for demonstration purposes</span></footer>
     <div id="error" class="error" hidden></div>
   </body>
 </html>
