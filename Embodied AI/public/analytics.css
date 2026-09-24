@@ -14,7 +14,7 @@
   --bg: linear-gradient(135deg, var(--midnight) 0%, var(--navy) 45%, var(--electric) 100%); --glow: rgba(147, 51, 234, .22);
   --title: var(--white); --label: #a78bfa; --panel-shadow: none; --tag-ai: var(--lavender); --tag-off: #fbbf24;
   --track: rgba(255, 255, 255, .10); --tick: rgba(221, 214, 254, .35); --split: rgba(221, 214, 254, .6); --grid: rgba(221, 214, 254, .18);
-  --rule: rgba(221, 214, 254, .4); --sap-bg: var(--white); --sap-ink: #0070f2; --err-bg: rgba(220, 38, 38, .12); --err-ink: #fecaca;
+  --rule: rgba(221, 214, 254, .4); --err-bg: rgba(220, 38, 38, .12); --err-ink: #fecaca;
   --radius: 14px; --radius-sm: 8px;
   --font: "72", "72 Brand", "Calibri Light", Calibri, "Segoe UI", Arial, system-ui, sans-serif;
   --font-medium: "72 Brand Medium", "72", Calibri, "Segoe UI", Arial, system-ui, sans-serif;
@@ -30,7 +30,7 @@
   --track: var(--ghost); --tick: #c4b5fd; --split: var(--lavender); --grid: rgba(107, 33, 200, .12);
   --joule-surface: linear-gradient(180deg, #ffffff 0%, #faf8ff 60%, #fff0f8 100%);
   --joule-shadow: 0 8px 40px rgba(88, 62, 214, .18), 0 2px 12px rgba(88, 62, 214, .08);
-  --sap-bg: #0070f2; --sap-ink: var(--white); --rule: var(--mist); --err-bg: #fef2f2; --err-ink: #991b1b;
+  --rule: var(--mist); --err-bg: #fef2f2; --err-ink: #991b1b;
 }
 /* Panels and stat tiles take the Joule assistant surface from the Soriana Fiori launchpad:
    white → #FAF8FF → #FFF0F8, 20 px corners, soft violet shadow, no border. */
@@ -63,7 +63,7 @@ a { color: inherit; }
 /* ---- top bar --------------------------------------------------------- */
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0 12px; }
 .brand { display: flex; align-items: center; gap: 14px; }
-.brand .sap { font: 700 18px/1 var(--font-medium); letter-spacing: .02em; color: var(--sap-ink); background: var(--sap-bg); padding: 4px 8px; border-radius: 4px; }
+.brand .sap-logo { height: 34px; width: auto; display: block; flex-shrink: 0; }
 .brand strong { display: block; font: 300 26px/1.05 var(--font); letter-spacing: .01em; color: var(--title); }
 .brand span { display: block; font-size: 11px; color: var(--label); margin-top: 3px; }
 .brand .back { font-size: 12px; font-weight: 400; color: var(--ink-2); text-decoration: none; padding: 6px 12px; border: 1px solid var(--glass-edge); border-radius: var(--radius-sm); background: var(--glass); }
