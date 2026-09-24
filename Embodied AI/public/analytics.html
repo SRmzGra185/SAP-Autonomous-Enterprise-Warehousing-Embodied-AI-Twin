@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1a2b3c" />
+    <title>Joule Analytics · SAP BDC Connect</title>
+    <link rel="stylesheet" href="/analytics.css" />
+    <script src="/vendor/echarts.min.js" defer></script>
+    <script src="/analytics.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand"><a class="back" href="/">← Back to twin</a><span class="brand-sep"></span><div><strong>JOULE ANALYTICS</strong><span>SAP BDC Connect · Autonomous Operations Twin</span></div></div>
+      <div class="top-tools">
+        <span class="tag ai" id="jouleTag">SAP AI Core</span>
+        <button id="refresh" class="btn">Refresh</button>
+      </div>
+    </header>
+
+    <div class="sub-bar"><span id="mainSub">Loading the most recent simulation…</span><span class="muted" id="genAt"></span></div>
+
+    <div id="empty" class="panel" hidden>
+      <div class="ph"><div><h2>No simulation yet</h2></div></div>
+      <p>You haven't run a simulation for this tenant yet. Go to the <a href="/">Routine Lab</a> and run one — this dashboard will then show its KPIs and Joule's analysis.</p>
+    </div>
+
+    <div class="layout" id="layout" hidden>
+      <div class="main">
+        <div class="kpis" id="kpis"></div>
+
+        <section class="panel" id="pUtil">
+          <div class="ph"><div><h2>Resource utilization by node</h2><div class="sub" id="utilSub"></div></div></div>
+          <div id="utilization" class="chart tall"></div>
+        </section>
+
+        <section class="panel" id="pTable">
+          <div class="ph"><div><h2>Node detail</h2><div class="sub">This run · seconds · replication means</div></div></div>
+          <div class="table-wrap"><table id="detail"><thead><tr><th>Node</th><th>Kind</th><th class="num">Capacity</th><th class="num">Utilization</th><th class="num">Queued s</th><th class="num">Busy s</th></tr></thead><tbody></tbody></table></div>
+        </section>
+      </div>
+
+      <aside class="side">
+        <section class="panel ai" id="pJoule">
+          <div class="ph"><div><h2>Joule</h2><div class="sub" id="jouleSub">Executive summary · recommendations · risks</div></div><span class="ai-dot"></span></div>
+          <div id="jouleSummary" class="joule-summary">Waiting for the simulation…</div>
+          <h3>Recommendations</h3>
+          <div id="jouleRecs" class="joule-recs"></div>
+          <h3>Risks</h3>
+          <ul id="jouleRisks" class="joule-risks"></ul>
+          <p class="foot" id="jouleFoot"></p>
+        </section>
+      </aside>
+    </div>
+
+    <footer><span id="footSrc">Source: SAP Autonomous Operations Twin · DES engine · your most recent Routine Lab run</span><span>Intelligence: SAP AI Core · Joule</span><span>Simulated data for demonstration purposes</span></footer>
+    <div id="error" class="error" hidden></div>
+  </body>
+</html>

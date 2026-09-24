@@ -37,6 +37,7 @@ body{min-width:760px;background:#eef2f5;color:var(--ink);font-size:13px}
 .operations-ui .operations-error{color:#a53c37}
 .operations-ui .operations-scope{margin:0 22px 18px;color:#496c83;font-size:12px}
 .operations-ui .operations-scope summary{cursor:pointer;padding:10px 0}
+.operations-ui .operations-scope .measured{color:#1a8f5c;font-weight:700}
 .operations-ui #connections-settings{min-height:70px;scroll-margin-top:24px}
 .operations-ui .library-item small{white-space:normal;line-height:1.4}
 .operations-ui #event-timeline{scroll-margin-top:24px}

@@ -54,6 +54,18 @@ export function validateAgentTask(body = {}, limits) {
   return { goal: text(body.goal, "goal", 2000), maxTokens: Math.floor(number(body.maxTokens ?? limits.maxTokens, "maxTokens", 256, limits.maxTokens)), maxSteps: Math.floor(number(body.maxSteps ?? limits.maxSteps, "maxSteps", 1, limits.maxSteps)), maxDelegations: Math.floor(number(body.maxDelegations ?? limits.maxDelegations, "maxDelegations", 1, limits.maxDelegations)), fallbackTest: trigger };
 }
 
+export function validateOptimizationInput(body = {}) {
+  return {
+    objective: oneOf(body.objective || "throughput", "objective", ["throughput", "p95Cycle", "averageCycle"]),
+    iterations: Math.floor(number(body.iterations ?? 4, "iterations", 1, 12)),
+    candidates: Math.floor(number(body.candidates ?? 2, "candidates", 1, 4)),
+    entities: Math.floor(number(body.entities ?? 24, "entities", 8, 80)),
+    seed: Math.floor(number(body.seed ?? 42, "seed", 0, 2147483647)),
+    capacityBudget: Math.floor(number(body.capacityBudget ?? 3, "capacityBudget", 0, 20)),
+    serviceBudget: number(body.serviceBudget ?? 0.6, "serviceBudget", 0, 3)
+  };
+}
+
 export function validateRobotRoutineInput(body = {}, scenarioIds = []) {
   return {
     scenarioId: oneOf(body.scenarioId, "scenarioId", scenarioIds),
