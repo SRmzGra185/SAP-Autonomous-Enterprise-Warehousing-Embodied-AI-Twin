@@ -23,7 +23,6 @@ import { validateOptimizationInput } from "./validation.mjs";
 import { runAgentTask, runtimeDescriptor } from "./orchestrator.mjs";
 import { runLayoutOptimization } from "./src/optimizer.mjs";
 import { jouleAssist, jouleDescriptor } from "./src/joule-assistant.mjs";
-import { buildScenarioAnalytics } from "./src/analytics.mjs";
 import { buildLastRunAnalytics, buildLastRoutineAnalytics, buildJouleForJob } from "./src/run-analytics.mjs";
 import { createIsaacBridge } from "./src/isaac-bridge.mjs";
 import { createHumanoidLab, validateTrainInput, validateDeployInput, validateTeleopInput } from "./src/humanoid-lab.mjs";
@@ -145,7 +144,7 @@ async function routeRequest(req, res) {
   }
 
   if (pathname.startsWith("/api/")) {
-    const principal = await authenticate(req, config), agentRoute = ["/api/agent/tasks", "/api/joule/chat", "/api/optimizations", "/api/analytics/scenarios", "/api/analytics/last-run/joule"].includes(pathname), rate = limit(`${rateKey(req, principal)}:${agentRoute ? "agent" : "api"}`, agentRoute ? config.rateLimit.agentMax : config.rateLimit.max);
+    const principal = await authenticate(req, config), agentRoute = ["/api/agent/tasks", "/api/joule/chat", "/api/optimizations", "/api/analytics/last-run/joule"].includes(pathname), rate = limit(`${rateKey(req, principal)}:${agentRoute ? "agent" : "api"}`, agentRoute ? config.rateLimit.agentMax : config.rateLimit.max);
     if (req.method === "GET" && pathname === "/api/joule/descriptor") return json(res, 200, jouleDescriptor(config, recipeDescriptor()), origin, rate);
     if (req.method === "POST" && pathname === "/api/joule/chat") {
       if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
@@ -250,11 +249,6 @@ async function routeRequest(req, res) {
         : runOperationsPlan(task, principal, scenario, emit));
       record("agent_task_queued", { jobId: job.id, goal: task.goal.slice(0, 120), provider: config.orchestrator.provider, result: "queued" }, principal);
       return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
-    }
-    if (req.method === "GET" && pathname === "/api/analytics/scenarios") {
-      const analytics = await buildScenarioAnalytics(config, principal, { entities: url.searchParams.get("entities"), seed: url.searchParams.get("seed"), runs: url.searchParams.get("runs"), refresh: url.searchParams.get("refresh") === "1" });
-      if (!analytics.cached) record("analytics_generated", { scenarios: analytics.scenarios.length, provider: analytics.provider, joule: Boolean(analytics.joule), result: "generated" }, principal);
-      return json(res, 200, analytics, origin, rate);
     }
     // Cheap existence check for the UI: reads the in-memory index only, never
     // calls AI Core (the full /last-run does, and takes seconds).
