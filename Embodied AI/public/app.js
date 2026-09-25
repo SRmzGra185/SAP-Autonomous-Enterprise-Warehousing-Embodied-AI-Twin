@@ -374,9 +374,9 @@ function interfaceContent(tool) {
     <p>Mock shared product: ${escapeHtml(scenario?.domain || "Asset Management")} operational context.</p>
     <dl><dt>Local contract</dt><dd>Scenario identity → routine steps → synthetic sensor inputs → approval decisions → recorded evidence.</dd><dt>Connection boundary</dt><dd>SAP BDC Connect shares context; Joule is the only other supported external connection. Neither is required for local simulation.</dd></dl>
     <p>These are local prototype contracts, not a live product catalog.</p>
-    <div class="operations-actions">${tool === "connect" ? operationButton("analytics", "✦ Joule analytics · scenario insights") : ""}${operationButton("grafcet", "Inspect current routine")}</div>`;
+    <div class="operations-actions">${tool === "connect" ? operationButton("analytics", '<i class="joule-icon" aria-hidden="true"></i>Joule analytics · scenario insights') : ""}${operationButton("grafcet", "Inspect current routine")}</div>`;
   if (tool === "agent") content = `
-    <h4>Joule · NOT CONNECTED</h4><p>This action starts a bounded local mock plan. It does not call Joule or execute its recommendations.</p>
+    <h4 class="workspace-joule-title"><i class="joule-icon" aria-hidden="true"></i>Joule · NOT CONNECTED</h4><p>This action starts a bounded local mock plan. It does not call Joule or execute its recommendations.</p>
     <label for="workspace-agent-goal">Operations goal</label><textarea id="workspace-agent-goal" maxlength="2000" rows="3">${escapeHtml($("#agent-goal").value)}</textarea>
     <div class="operations-actions">${operationButton("agent-start", "Start local mock plan")}${operationButton("trace", "Open recorded trace")}</div>
     <h4>Latest local plan</h4><pre id="workspace-agent-plan">${escapeHtml(state.agentPlan ? JSON.stringify(state.agentPlan, null, 2) : "No completed local plan yet.")}</pre>`;
@@ -1292,9 +1292,9 @@ function renderRibbon(tab) {
   const sets = {
     model: [["select", "↖", "Select"], ["trail", "⌁", "Trail"]],
     simulate: [["run", "▶", "Run"], ["realtime", "◉", "Paced playback"], ["monte", "∿", "Monte Carlo"], ["rewind", "↺", "Reset clock"], ["save", "▣", "Save Snapshot"]],
-    integrate: [["connect", "◈", "SAP BDC Connect"], ["agent", "✦", "Joule"], ["analytics", "▤", "Joule Analytics"]],
+    integrate: [["connect", "◈", "SAP BDC Connect"], ["agent", "joule", "Joule"], ["analytics", "joule", "Joule Analytics"]],
     audit: [["approval", "⌑", "Human Approval"], ["evidence", "▤", "Evidence & Audit"], ["save", "▣", "Save Snapshot"]],
-    agent: [["agent", "✦", "Joule · Local Mock"], ["trace", "⇄", "Recorded Trace"]],
+    agent: [["agent", "joule", "Joule · Local Mock"], ["trace", "⇄", "Recorded Trace"]],
     robot: [["robotlab", "◇", "Open Embodied AI Lab"], ["loadcell", "▣", "Connect Workcell"], ["stepgrafcet", "↦", "Next GRAFCET"], ["runroutine", "▶", "Run Routine"], ["shadow", "◉", "Shadow Mode"], ["save", "▣", "Save Snapshot"]],
     humanoid: [["humanoidlab", "◇", "Open Digital Twin Robotics"], ["h1train", "∿", "Train Policy"], ["h1deploy", "▶", "Deploy & Stand Up"], ["h1teleop", "↦", "Walk Forward"]]
   };
@@ -1302,7 +1302,7 @@ function renderRibbon(tab) {
     const button = document.createElement("button"); button.className = "tool-button";
     if(["select","trail"].includes(id)) button.dataset.editorTool=id;
     else { button.dataset.tool=Boolean(objectDefinitions[id])?id:""; button.dataset.command=button.dataset.tool?"":id; }
-    button.innerHTML = `${glyph}<span>${label}</span>`; return button;
+    button.innerHTML = `${glyph === "joule" ? '<i class="joule-icon" aria-hidden="true"></i>' : glyph}<span>${label}</span>`; return button;
   }));
   if(tab==="model") {
     const controls=document.createElement("div"); controls.className="model-capacity-controls";

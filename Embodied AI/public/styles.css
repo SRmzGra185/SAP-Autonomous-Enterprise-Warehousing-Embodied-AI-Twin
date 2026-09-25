@@ -485,3 +485,15 @@ body.h1-pip { margin: 0; min-height: 100vh; background: linear-gradient(180deg, 
 .h1-pip-card .h1-joule-float { display: none; }
 .h1-pip-card .h1-joule-answer { font-size: 11px; }
 .h1-pip-card .h1-joule-row input { height: 34px; font-size: 11px; border-radius: 999px; padding: 0 14px; border-color: #c9b8ff; }
+
+/* Joule icon everywhere Joule is named (SAP-icons v5 "da", the Fiori shell-bar Joule button),
+   drawn as a mask so it takes the Joule violet gradient; data URI so it also works in the
+   floating Joule window. */
+:root { --joule-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M12 0a.75.75 0 0 1 .62.326l3.25 4.752a.75.75 0 0 1-.018.871l-7.25 9.753a.756.756 0 0 1-1.204 0L.148 5.95a.75.75 0 0 1-.017-.871L3.437.254A.75.75 0 0 1 4 0h8ZM1.67 5.484 8 13.998l6.328-8.514L11.605 1.5h-7.21L1.671 5.484Zm7.5-2.25a.35.35 0 0 1 .66 0c.37 1.084.85 1.575 1.93 1.937.32.11.32.562 0 .662-1.08.371-1.57.853-1.93 1.936a.35.35 0 0 1-.66 0c-.37-1.083-.85-1.575-1.93-1.936-.32-.11-.32-.562 0-.662 1.08-.372 1.57-.853 1.93-1.937Z'/%3E%3C/svg%3E"); --joule-violet: linear-gradient(135deg, #a374ff 0%, #5b3fd6 100%); }
+.joule-icon { display: inline-block; width: 1.15em; height: 1.15em; flex-shrink: 0; vertical-align: -0.2em; background: var(--joule-violet); -webkit-mask: var(--joule-icon) center / contain no-repeat; mask: var(--joule-icon) center / contain no-repeat; }
+.ribbon-tabs button .joule-icon { margin-right: 5px; }
+.tool-button .joule-icon { width: 17px; height: 17px; vertical-align: middle; }
+.icon-model.joule { left: 5px; top: 5px; width: 18px; height: 18px; transform: none; border-radius: 0; box-shadow: none; background: var(--joule-violet); -webkit-mask: var(--joule-icon) center / contain no-repeat; mask: var(--joule-icon) center / contain no-repeat; }
+.analytics-link .joule-icon, .secondary-button .joule-icon, .operations-actions .joule-icon { margin-right: 5px; }
+.h1-joule-head .joule-icon { width: 26px; height: 26px; }
+.workspace-joule-title { display: flex; align-items: center; gap: 7px; }

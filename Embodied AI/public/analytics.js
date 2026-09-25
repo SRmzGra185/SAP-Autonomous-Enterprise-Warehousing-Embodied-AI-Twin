@@ -35,6 +35,10 @@
   }
 
   function jouleCard() {
+    const card = jouleCardInner(); card.classList.add("joule"); return card;
+  }
+
+  function jouleCardInner() {
     const { joule, jouleError, joulePending } = state.data;
     if (joule) return kpiCard("Joule", "Live", "", "● analysis ready", "pos", "summary · recommendations · risks");
     if (joulePending) return kpiCard("Joule", "Thinking…", "", "analyzing this run", "amber", "summary on its way");

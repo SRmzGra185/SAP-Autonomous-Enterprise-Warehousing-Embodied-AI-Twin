@@ -143,10 +143,9 @@ tr:hover td { background: var(--ghost); }
 .joule-risks { margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--ink-2); }
 .joule-risks li { margin-bottom: 4px; }
 .foot { font-size: 10px; font-style: italic; color: var(--muted-2); margin: 12px 0 0; }
-.brand-mark { width: 24px; height: 24px; flex-shrink: 0; color: #1d2d3e; }
+.brand-mark { width: 26px; height: 26px; flex-shrink: 0; }
 /* Joule title as in the Soriana Fiori assistant header: star and word centred on one line */
 .ph h2.joule-title { display: flex; align-items: center; gap: 8px; color: #5b3fd6; font-weight: 700; line-height: 1; }
-.jmark { width: 20px; height: 20px; flex-shrink: 0; filter: drop-shadow(0 2px 6px rgba(120, 88, 255, .4)); }
 
 /* ---- footer per guide: thin mist rule, gray 9pt ---------------------- */
 footer { display: flex; flex-wrap: wrap; gap: 18px; justify-content: space-between; margin-top: 22px; padding-top: 12px; border-top: .4px solid var(--rule); font-size: 11px; color: var(--muted-2); }
@@ -154,3 +153,14 @@ footer { display: flex; flex-wrap: wrap; gap: 18px; justify-content: space-betwe
 [hidden] { display: none !important; }
 @media (max-width: 1200px) { .main { grid-column: span 12; } .side { grid-column: span 12; position: static; } .hero { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, 1fr); } .tachos { grid-template-columns: 1fr; } }
+
+/* Joule icon everywhere Joule is named (SAP-icons v5 "da", the Fiori shell-bar Joule button),
+   drawn as a mask so it takes the Joule violet gradient; data URI so it also works in the
+   floating Joule window. */
+:root { --joule-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M12 0a.75.75 0 0 1 .62.326l3.25 4.752a.75.75 0 0 1-.018.871l-7.25 9.753a.756.756 0 0 1-1.204 0L.148 5.95a.75.75 0 0 1-.017-.871L3.437.254A.75.75 0 0 1 4 0h8ZM1.67 5.484 8 13.998l6.328-8.514L11.605 1.5h-7.21L1.671 5.484Zm7.5-2.25a.35.35 0 0 1 .66 0c.37 1.084.85 1.575 1.93 1.937.32.11.32.562 0 .662-1.08.371-1.57.853-1.93 1.936a.35.35 0 0 1-.66 0c-.37-1.083-.85-1.575-1.93-1.936-.32-.11-.32-.562 0-.662 1.08-.372 1.57-.853 1.93-1.937Z'/%3E%3C/svg%3E"); --joule-violet: linear-gradient(135deg, #a374ff 0%, #5b3fd6 100%); }
+.joule-icon { display: inline-block; width: 1.15em; height: 1.15em; flex-shrink: 0; vertical-align: -0.2em; background: var(--joule-violet); -webkit-mask: var(--joule-icon) center / contain no-repeat; mask: var(--joule-icon) center / contain no-repeat; }
+.brand-mark, .ph h2.joule-title .joule-icon { background: var(--joule-violet); }
+.ph h2.joule-title .joule-icon { width: 22px; height: 22px; }
+.kpi.joule .k-l { display: flex; align-items: center; gap: 5px; }
+.kpi.joule .k-l::before { content: ""; width: 13px; height: 13px; background: var(--joule-violet); -webkit-mask: var(--joule-icon) center / contain no-repeat; mask: var(--joule-icon) center / contain no-repeat; }
+#jouleTag::before { content: ""; width: 12px; height: 12px; border-radius: 0; box-shadow: none; background: var(--joule-violet); -webkit-mask: var(--joule-icon) center / contain no-repeat; mask: var(--joule-icon) center / contain no-repeat; }
