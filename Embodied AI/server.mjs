@@ -25,8 +25,8 @@ import { runLayoutOptimization } from "./src/optimizer.mjs";
 import { jouleAssist, jouleDescriptor } from "./src/joule-assistant.mjs";
 import { buildLastRunAnalytics, buildLastRoutineAnalytics, buildJouleForJob } from "./src/run-analytics.mjs";
 import { createIsaacBridge } from "./src/isaac-bridge.mjs";
-import { createHumanoidLab, validateTrainInput, validateDeployInput, validateTeleopInput } from "./src/humanoid-lab.mjs";
-import { jouleTeleopAssist, PRESET_PROMPTS as H1_JOULE_PROMPTS } from "./src/humanoid-joule.mjs";
+import { createHumanoidLab, validateTrainInput, validateDeployInput, validateTeleopInput, validateNavigateInput, validateCameraInput } from "./src/humanoid-lab.mjs";
+import { jouleMissionPlan, presetPrompts as h1JoulePrompts } from "./src/humanoid-joule.mjs";
 
 assertSecureConfiguration();
 const __dirname = path.dirname(fileURLToPath(import.meta.url)), publicDir = path.join(__dirname, "public");
@@ -138,7 +138,9 @@ async function routeRequest(req, res) {
   if (pathname.startsWith("/api/isaac/executor/")) {
     isaac.authorize(req);
     const rate = limit(`isaac:${req.socket.remoteAddress || "unknown"}`, config.rateLimit.max * 10);
-    if (req.method === "POST" && pathname === "/api/isaac/executor/next") { const body = await readJson(req, config); const next = isaac.nextMission(body.executor || {}); return json(res, 200, { ...(next?.humanoidJob ? { humanoidJob: next.humanoidJob } : { mission: next }), serverTime: Date.now() }, origin, rate); }
+    if (req.method === "POST" && pathname === "/api/isaac/executor/next") { const body = await readJson(req, config); const next = isaac.nextMission(body.executor || {}); return json(res, 200, { ...(next?.humanoidJob ? { humanoidJob: next.humanoidJob } : {}), needMap: Boolean(next?.needMap), serverTime: Date.now() }, origin, rate); }
+    if (req.method === "POST" && pathname === "/api/isaac/executor/frame") { const body = await readJson(req, { ...config, bodyLimitBytes: Math.max(config.bodyLimitBytes, 600_000) }); return json(res, 202, isaac.setFrame(body), origin, rate); }
+    if (req.method === "POST" && pathname === "/api/isaac/executor/map") { const body = await readJson(req, { ...config, bodyLimitBytes: Math.max(config.bodyLimitBytes, 1_000_000) }); return json(res, 202, isaac.setMap(body), origin, rate); }
     if (req.method === "POST" && pathname === "/api/isaac/executor/events") { const body = await readJson(req, { ...config, bodyLimitBytes: Math.max(config.bodyLimitBytes, 1_000_000) }); return json(res, 202, isaac.pushEvents(String(body.jobId || ""), Array.isArray(body.events) ? body.events : []), origin, rate); }
     throw new HttpError(404, "Isaac executor route not found.", "not_found");
   }
@@ -308,31 +310,39 @@ async function routeRequest(req, res) {
 
     // Digital Twin Robotics · Unitree H1 humanoid module (separate lane from warehouse routines).
     if (req.method === "GET" && pathname === "/api/humanoid/descriptor") return json(res, 200, humanoidLab.descriptor(), origin, rate);
-    if (req.method === "GET" && pathname === "/api/humanoid/joule/prompts") return json(res, 200, { prompts: H1_JOULE_PROMPTS }, origin, rate);
-    if (req.method === "POST" && ["/api/humanoid/train", "/api/humanoid/deploy", "/api/humanoid/teleop"].includes(pathname)) {
-      if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
-      const kind = pathname.split("/").pop();
-      if ([...jobs.values()].some((job) => job.tenantId === principal.tenantId && job.kind === "humanoid" && ["queued", "running"].includes(job.status))) throw new HttpError(409, "Stop or finish the active H1 job before starting another.", "routine_busy");
-      const body = await readJson(req, config);
-      const input = kind === "train" ? validateTrainInput(body) : kind === "deploy" ? validateDeployInput(body) : validateTeleopInput(body);
-      const runner = kind === "train" ? humanoidLab.runTrain : kind === "deploy" ? humanoidLab.runDeploy : humanoidLab.runTeleop;
-      const job = launchJob("humanoid", principal, (emit, controls, job) => runner(input, emit, controls, job));
+    if (req.method === "GET" && pathname === "/api/humanoid/joule/prompts") { const ex = isaac.executorState(); return json(res, 200, { prompts: h1JoulePrompts(isaac.mapPlaces(), ex?.robot || "h1") }, origin, rate); }
+    if (req.method === "GET" && pathname === "/api/humanoid/frame") { const frame = isaac.getFrame(); if (!frame) return json(res, 404, { error: "No robot frame yet.", code: "no_frame" }, origin, rate); return json(res, 200, frame, origin, rate); }
+    if (req.method === "GET" && pathname === "/api/humanoid/map") { const map = isaac.getMap(); if (!map) return json(res, 404, { error: "No warehouse map yet: connect Isaac Sim and deploy a robot.", code: "no_map" }, origin, rate); return json(res, 200, map, origin, rate); }
+    const humanoidBusy = () => [...jobs.values()].some((job) => job.tenantId === principal.tenantId && job.kind === "humanoid" && ["queued", "running"].includes(job.status));
+    const launchHumanoid = (kind, runner) => {
+      const job = launchJob("humanoid", principal, runner);
       record(`humanoid_${kind}_queued`, { jobId: job.id, result: "queued" }, principal);
       return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
+    };
+    if (req.method === "POST" && ["/api/humanoid/train", "/api/humanoid/deploy", "/api/humanoid/teleop", "/api/humanoid/navigate", "/api/humanoid/camera"].includes(pathname)) {
+      if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
+      const kind = pathname.split("/").pop();
+      if (humanoidBusy()) throw new HttpError(409, "Stop or finish the active robot job before starting another.", "routine_busy");
+      const body = await readJson(req, config), robot = isaac.executorState()?.robot || "h1";
+      let input;
+      try {
+        input = kind === "train" ? validateTrainInput(body) : kind === "deploy" ? validateDeployInput(body) : kind === "teleop" ? validateTeleopInput(body, robot) : kind === "navigate" ? validateNavigateInput(body, isaac.mapPlaces()) : validateCameraInput(body);
+      } catch (error) { throw new HttpError(error.status || 400, error.message, "validation_error"); }
+      const runner = { train: humanoidLab.runTrain, deploy: humanoidLab.runDeploy, teleop: humanoidLab.runTeleop, navigate: humanoidLab.runNavigate, camera: humanoidLab.runCamera }[kind];
+      return launchHumanoid(kind, (emit, controls, job) => runner(input, emit, controls, job));
     }
     if (req.method === "POST" && pathname === "/api/humanoid/joule") {
       if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
-      if ([...jobs.values()].some((job) => job.tenantId === principal.tenantId && job.kind === "humanoid" && ["queued", "running"].includes(job.status))) throw new HttpError(409, "Stop or finish the active H1 job before starting another.", "routine_busy");
+      if (humanoidBusy()) throw new HttpError(409, "Stop or finish the active robot job before starting another.", "routine_busy");
       const body = await readJson(req, config);
       const goal = typeof body?.goal === "string" ? body.goal.trim().slice(0, 300) : "";
-      if (!goal) throw new HttpError(400, "Describe what the H1 should do.", "validation_error");
-      const job = launchJob("humanoid", principal, async (emit, controls, job) => {
-        const joule = await jouleTeleopAssist(config, { goal, principal, emit });
-        await emit({ type: "h1_joule_answer", goal, answer: joule.answer, command: joule.command, provider: joule.provider, model: joule.model });
-        return humanoidLab.runTeleop(joule.command, emit, controls, job);
+      if (!goal) throw new HttpError(400, "Describe what the robot should do.", "validation_error");
+      return launchHumanoid("joule", async (emit, controls, job) => {
+        const ex = isaac.executorState();
+        const joule = await jouleMissionPlan(config, { goal, principal, emit, places: isaac.mapPlaces(), robot: ex?.robot || "h1", pose: ex?.pose || null });
+        await emit({ type: "h1_joule_answer", goal, answer: joule.answer, steps: joule.steps, provider: joule.provider, model: joule.model });
+        return humanoidLab.runPlan({ steps: joule.steps }, emit, controls, job);
       });
-      record("humanoid_joule_queued", { jobId: job.id, goal, result: "queued" }, principal);
-      return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
     }
     if (req.method === "GET" && pathname === "/api/humanoid/active") return json(res, 200, [...jobs.values()].filter((job) => job.tenantId === principal.tenantId && job.kind === "humanoid" && ["queued", "running"].includes(job.status)).map(jobEnvelope), origin, rate);
     const resolutionMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/resolution$/);

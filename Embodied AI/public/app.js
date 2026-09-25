@@ -501,79 +501,197 @@ function confirmOptimizerResult(summary) {
   logLine("optimizer", `confirmation experiment: ${label} ${actual}${predicted ? ` vs predicted ${predicted}` : ""}`);
 }
 
-// ---- Digital Twin Robotics · Unitree H1 humanoid module -----------------------------------
-// Self-contained: its own status poll, SSE watcher and small SVG reward chart. Reuses the same
-// Isaac executor/bridge as the warehouse Routine Lab but never touches state.robotRunning or
+// ---- Digital Twin Robotics · Unitree H1 / Go2 module ---------------------------------------
+// Self-contained: its own status poll, SSE watcher, reward chart and warehouse map. Reuses the
+// same Isaac executor/bridge as the warehouse Routine Lab but never touches state.robotRunning or
 // the GRAFCET/mesh-world state, so the two labs cannot interfere with each other.
-const h1 = { source: null, trainPoints: [], running: false };
+const h1 = { source: null, trainPoints: [], running: false, pose: null, path: null, map: null, mapVersion: 0, robot: "h1", view: "chase", plan: [] };
+const h1$ = (selector) => document.querySelector(selector) || h1.pip?.document.querySelector(selector) || null;
+const H1_ROBOT_LABEL = { h1: "Unitree H1", go2: "Unitree Go2" };
+const H1_TASK = { h1: "Isaac-Velocity-Flat-H1-v0", go2: "Isaac-Velocity-Flat-Unitree-Go2-v0" };
 
-function h1Log(caption) { $("#h1-snapshot-caption").textContent = caption; }
+function h1Log(caption) { h1$("#h1-snapshot-caption").textContent = caption; }
 
-function h1SetGait(label) { $("#h1-gait-badge").textContent = label; }
+function h1SetGait(label) { h1$("#h1-gait-badge").textContent = label; }
+
+function h1DrawReward() {
+  const svg = h1$("#h1-reward-chart"), pts = h1.trainPoints;
+  if (!svg) return;
+  if (!pts.length) { svg.innerHTML = ""; return; }
+  const W = 560, H = 160, pad = 26, maxIt = Math.max(...pts.map((p) => p.iteration), 1);
+  const lo = Math.min(-5, ...pts.map((p) => p.reward)), hi = Math.max(22, ...pts.map((p) => p.reward));
+  const x = (it) => pad + (it / maxIt) * (W - pad * 2), y = (r) => H - pad - ((r - lo) / (hi - lo)) * (H - pad * 2);
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${x(p.iteration).toFixed(1)},${y(p.reward).toFixed(1)}`).join(" ");
+  svg.innerHTML = `<line x1="${pad}" y1="${y(0)}" x2="${W - pad}" y2="${y(0)}" stroke="#dbe6ee"/><path d="${line}" fill="none" stroke="#5b3fd6" stroke-width="2"/><text x="${pad}" y="14" font-size="9" fill="#718391">reward</text><text x="${W - pad}" y="${H - 6}" font-size="9" fill="#718391" text-anchor="end">iteration ${maxIt}</text>`;
+}
+
+// ---- warehouse map (occupancy PNG from the executor's PhysX scan + live pose + route) ----------
+function h1DrawMap() {
+  const svg = h1$("#h1-map"), map = h1.map;
+  if (!svg) return;
+  if (!map) { svg.innerHTML = ""; h1$("#h1-map-wrap").classList.add("empty"); return; }
+  h1$("#h1-map-wrap").classList.remove("empty");
+  const { minX, minY, maxX, maxY } = map.bounds, W = maxX - minX, H = maxY - minY;
+  const u = (x) => (x - minX).toFixed(2), v = (y) => (maxY - y).toFixed(2), unit = Math.max(W, H) / 60;
+  svg.setAttribute("viewBox", `0 0 ${W.toFixed(2)} ${H.toFixed(2)}`);
+  const places = map.places.map((p) => {
+    const color = p.kind === "start" ? "#16a34a" : p.kind === "rack" ? "#5b3fd6" : "#1565c0";
+    return `<g class="h1-map-place" data-place="${escapeHtml(p.id)}" tabindex="0" role="button" aria-label="Go to ${escapeHtml(p.name)}"><circle cx="${u(p.x)}" cy="${v(p.y)}" r="${(unit * 0.9).toFixed(2)}" fill="${color}" stroke="#fff" stroke-width="${(unit * 0.25).toFixed(2)}"/><text x="${u(p.x)}" y="${(maxY - p.y - unit * 1.5).toFixed(2)}" font-size="${(unit * 1.6).toFixed(2)}" text-anchor="middle">${escapeHtml(p.name)}</text></g>`;
+  }).join("");
+  const path = h1.path?.length ? `<polyline points="${h1.path.map(([x, y]) => `${u(x)},${v(y)}`).join(" ")}" fill="none" stroke="#9333ea" stroke-width="${(unit * 0.45).toFixed(2)}" stroke-dasharray="${(unit * 1.2).toFixed(2)} ${(unit * 0.8).toFixed(2)}" stroke-linecap="round"/>` : "";
+  const pose = h1.pose;
+  const robot = pose ? `<g transform="translate(${u(pose.x)} ${v(pose.y)}) rotate(${(-pose.heading * 180 / Math.PI).toFixed(1)})"><circle r="${(unit * 2.4).toFixed(2)}" fill="rgba(147,51,234,.18)"/><path d="M ${(unit * 2).toFixed(2)} 0 L ${(-unit * 1.3).toFixed(2)} ${(unit * 1.3).toFixed(2)} L ${(-unit * 0.6).toFixed(2)} 0 L ${(-unit * 1.3).toFixed(2)} ${(-unit * 1.3).toFixed(2)} Z" fill="#1a0f5e" stroke="#fff" stroke-width="${(unit * 0.25).toFixed(2)}"/></g>` : "";
+  svg.innerHTML = `<rect width="${W.toFixed(2)}" height="${H.toFixed(2)}" fill="#faf8ff"/><image href="${map.image}" x="0" y="0" width="${W.toFixed(2)}" height="${H.toFixed(2)}" preserveAspectRatio="none" style="image-rendering:pixelated"/>${path}${places}${robot}`;
+}
+
+function h1RenderPlaces() {
+  const wrap = h1$("#h1-places"), places = h1.map?.places || [];
+  if (!places.length) { wrap.innerHTML = "<em>Destinations appear when Isaac Sim maps the warehouse.</em>"; return; }
+  wrap.innerHTML = places.map((p) => `<button type="button" class="h1-place kind-${escapeHtml(p.kind)}" data-place="${escapeHtml(p.id)}">${escapeHtml(p.name)}</button>`).join("");
+}
+
+async function h1LoadMap() {
+  try {
+    h1.map = await api("/api/humanoid/map");
+    h1$("#h1-map-meta").textContent = `${h1.map.environmentLabel || h1.map.environment} · ${h1.map.places.length} destinations · ${(h1.map.bounds.maxX - h1.map.bounds.minX).toFixed(0)} × ${(h1.map.bounds.maxY - h1.map.bounds.minY).toFixed(0)} m`;
+  } catch { h1.map = null; h1$("#h1-map-meta").textContent = "No map yet · deploy a robot with Isaac Sim connected"; }
+  h1RenderPlaces(); h1DrawMap(); h1LoadPrompts();
+}
+
+function h1LoadPrompts() {
+  api("/api/humanoid/joule/prompts").then((data) => {
+    const wrap = h1$("#h1-joule-presets"); wrap.innerHTML = "";
+    for (const prompt of data.prompts || []) {
+      const button = document.createElement("button");
+      button.type = "button"; button.textContent = prompt;
+      button.addEventListener("click", () => { h1$("#h1-joule-goal").value = prompt; runH1Joule(prompt); });
+      wrap.appendChild(button);
+    }
+  }).catch(() => { /* presets are a convenience; the free-text input still works */ });
+}
+
+function h1RenderPlan() {
+  const list = h1$("#h1-plan");
+  list.hidden = !h1.plan.length;
+  list.innerHTML = h1.plan.map((step) => `<li class="${step.status || "pending"}"><span>${escapeHtml(step.label)}</span>${step.detail ? `<em>${escapeHtml(step.detail)}</em>` : ""}</li>`).join("");
+}
+
+function h1SetRobot(robot, environment) {
+  if (!robot || !H1_ROBOT_LABEL[robot]) return;
+  h1.robot = robot;
+  // selectors follow what is actually loaded in Isaac Sim, unless the user is choosing a new one
+  if (!h1.selectTouched) { h1$("#h1-robot").value = robot; if (environment && h1$(`#h1-environment option[value="${environment}"]`)) h1$("#h1-environment").value = environment; }
+  const name = H1_ROBOT_LABEL[robot];
+  h1$("#h1-stage-eyebrow").textContent = `${name.toUpperCase()} VIEW`;
+  h1$("#h1-drive-title").textContent = `Drive the ${name}`;
+  h1$("#h1-train-task").value = H1_TASK[robot];
+}
+
+function h1SetView(view) {
+  h1.view = view;
+  $$("[data-h1-view]").forEach((b) => b.classList.toggle("active", b.dataset.h1View === view));
+}
 
 function h1Watch(jobId) {
   h1.source?.close();
   const source = new EventSource(`/api/jobs/${jobId}/events`);
   h1.source = source; h1.running = true;
   let lastSequence = 0;
-  const types = ["job_started", "job_complete", "job_failed", "job_cancelled", "fallback_activated", "h1_train_started", "h1_train_metric", "h1_train_complete", "h1_deploy_started", "h1_deploy_phase", "h1_deploy_ready", "h1_teleop_started", "h1_teleop_step", "h1_teleop_complete", "h1_log", "h1_snapshot"];
+  const types = ["job_started", "job_complete", "job_failed", "job_cancelled", "fallback_activated", "planner_progress", "h1_train_started", "h1_train_metric", "h1_train_complete", "h1_deploy_started", "h1_deploy_phase", "h1_deploy_ready", "h1_deploy_complete", "h1_teleop_started", "h1_teleop_step", "h1_teleop_complete", "h1_log", "h1_snapshot", "h1_nav_path", "h1_plan_step", "h1_navigate_complete", "h1_camera_complete", "h1_plan_complete", "h1_joule_answer"];
+  const terminal = ["job_complete", "job_failed", "job_cancelled"];
   for (const type of types) source.addEventListener(type, (event) => {
     const payload = JSON.parse(event.data);
     if (payload.sequence && payload.sequence <= lastSequence) return;
     lastSequence = payload.sequence || lastSequence;
     h1Consume(payload);
-    const terminal = ["job_complete", "job_failed", "job_cancelled", "h1_train_complete", "h1_deploy_ready", "h1_deploy_complete", "h1_teleop_complete"];
     if (terminal.includes(type)) { source.close(); h1.source = null; h1.running = false; }
   });
   source.onerror = () => { if (h1.running) h1Log("Event stream interrupted; reconnecting…"); };
 }
 
 function h1Consume(event) {
-  if (event.type === "h1_train_started") { h1.trainPoints = []; h1.pose = { x: 0, heading: 0 }; h1.hasIsaacFrame = false; h1DrawReward(); $("#h1-train-status").textContent = `Training · 0 / ${event.iterations} iterations${event.executor ? "" : " (local simulation)"}`; h1SetGait("TRAINING"); h1Log(`Isaac Lab · ${event.task} · ${event.numEnvs} parallel envs`); }
-  if (event.type === "h1_train_metric") { h1.trainPoints.push({ iteration: event.iteration, reward: event.reward }); h1DrawReward(); $("#h1-train-status").textContent = `Training · ${event.iteration} / ${event.totalIterations} iterations`; $("#h1-train-metric").textContent = `reward ${event.reward} · episode length ${event.episodeLength}`; }
-  if (event.type === "h1_train_complete" || event.type === "h1_train_complete_isaac") { $("#h1-train-status").textContent = "Training complete"; $("#h1-checkpoint").textContent = event.checkpoint?.label || "trained checkpoint"; h1SetGait("STANDBY"); showToast(`H1 policy trained · reward ${event.reward}`); }
-  if (event.type === "h1_deploy_started") { h1.hasIsaacFrame = false; h1SetGait("DEPLOYING"); h1Log(`Loading ${event.checkpoint?.label || "checkpoint"} · ${event.terrain} terrain`); $("#h1-checkpoint").textContent = event.checkpoint?.label || "—"; }
-  if (event.type === "h1_deploy_phase") { h1Log(event.label); }
-  if (event.type === "h1_deploy_ready" || event.type === "h1_deploy_complete") { h1SetGait("READY"); h1Log("Locomotion policy holding balance"); showToast("H1 deployed and balancing."); }
-  if (event.type === "h1_teleop_started") { h1SetGait("WALKING"); }
-  if (event.type === "h1_teleop_step") { h1.pose = event.pose; $("#h1-pose").textContent = `x ${event.pose.x} · y ${event.pose.y} · heading ${Math.round((event.pose.heading * 180) / Math.PI)}°`; const gait = event.gait === "walk" ? "WALKING" : event.gait === "turn" ? "TURNING" : "STANDING"; h1SetGait(gait); }
+  if (event.type === "h1_train_started") { h1.trainPoints = []; h1DrawReward(); h1$("#h1-train-status").textContent = `Training · 0 / ${event.iterations} iterations${event.executor ? "" : " (local simulation)"}`; h1SetGait("TRAINING"); h1Log(`Isaac Lab · ${event.task} · ${event.numEnvs} parallel envs`); }
+  if (event.type === "h1_train_metric") { h1.trainPoints.push({ iteration: event.iteration, reward: event.reward }); h1DrawReward(); h1$("#h1-train-status").textContent = `Training · ${event.iteration} / ${event.totalIterations} iterations`; h1$("#h1-train-metric").textContent = `reward ${event.reward} · episode length ${event.episodeLength}`; }
+  if (event.type === "h1_train_complete") { h1$("#h1-train-status").textContent = "Training complete"; h1$("#h1-checkpoint").textContent = event.checkpoint?.label || "trained checkpoint"; h1SetGait("STANDBY"); showToast(`Policy trained · reward ${event.reward}`); }
+  if (event.type === "h1_deploy_started") { h1SetGait("DEPLOYING"); h1Log(`Loading ${event.checkpoint?.label || "checkpoint"}`); h1$("#h1-checkpoint").textContent = event.checkpoint?.label || "—"; }
+  if (event.type === "h1_deploy_phase") { h1SetGait(event.phase === "map" ? "MAPPING" : "DEPLOYING"); h1Log(event.label); }
+  if (event.type === "h1_deploy_ready" || event.type === "h1_deploy_complete") {
+    h1SetGait("READY"); h1.path = null; h1.plan = []; h1RenderPlan();
+    h1.selectTouched = false;
+    if (event.robot) h1SetRobot(event.robot, event.environment);
+    if (event.checkpoint?.label) h1$("#h1-checkpoint").textContent = event.checkpoint.label;
+    h1Log(`${event.robotLabel || H1_ROBOT_LABEL[h1.robot]} standing${event.environmentLabel ? ` · ${event.environmentLabel}` : ""}`);
+    showToast(`${event.robotLabel || "Robot"} deployed and balancing.`); h1LoadMap();
+  }
+  if (event.type === "h1_teleop_started") h1SetGait("WALKING");
+  if (event.type === "h1_teleop_step") {
+    h1.pose = event.pose;
+    h1$("#h1-pose").textContent = `x ${event.pose.x} · y ${event.pose.y} · heading ${Math.round((event.pose.heading * 180) / Math.PI)}°`;
+    h1SetGait(event.gait === "walk" ? "WALKING" : event.gait === "turn" ? "TURNING" : "STANDING"); h1DrawMap();
+  }
   if (event.type === "h1_teleop_complete") h1SetGait("READY");
-  if (event.type === "h1_snapshot") { h1.hasIsaacFrame = true; const fig = $("#h1-snapshot"); fig.classList.remove("hidden"); fig.classList.add("has-frame"); $("#h1-snapshot-img").src = event.image; h1Log(event.caption || "Robot camera"); }
+  if (event.type === "h1_nav_path") { h1.path = event.points; h1SetGait("NAVIGATING"); h1Log(`Route to ${event.target?.name || "destination"} · ${event.points.length} waypoints`); h1DrawMap(); }
+  if (event.type === "h1_navigate_complete") { h1SetGait(event.reached ? "ARRIVED" : "READY"); showToast(event.reached ? `Arrived at ${event.place}.` : `Could not reach ${event.place}: ${event.reason || "unknown"}`); }
+  if (event.type === "h1_camera_complete") { h1SetView(event.view); h1SetGait("READY"); }
+  if (event.type === "h1_plan_step") {
+    const step = h1.plan[event.index - 1] || (h1.plan[event.index - 1] = { label: event.label });
+    Object.assign(step, { status: event.status, detail: event.detail || "" }); h1RenderPlan();
+    if (event.status === "running") h1Log(`Step ${event.index}/${event.total} · ${event.label}`);
+  }
+  if (event.type === "h1_plan_complete") { h1SetGait("READY"); showToast(`Mission finished · ${event.completed}/${event.total} steps.`); }
+  if (event.type === "h1_snapshot") { const fig = h1$("#h1-snapshot"); fig.classList.add("has-frame"); h1$("#h1-snapshot-img").src = event.image; h1Log(event.caption || "Robot camera"); }
   if (event.type === "h1_log") h1Log(event.message);
-  if (event.type === "fallback_activated") h1Log(event.message);
-  if (event.type === "job_failed") { h1SetGait("ERROR"); showToast(event.error || "H1 job failed."); }
-  if (event.type === "h1_joule_answer") { const el = $("#h1-joule-answer"); el.classList.remove("pending"); el.textContent = event.provider && event.provider !== "mock" ? `Joule (${event.model}): ${event.answer}` : `Joule (local): ${event.answer}`; }
+  if (event.type === "planner_progress") { h1$("#h1-joule-answer").textContent = "Joule is planning the mission on SAP AI Core…"; }
+  if (event.type === "fallback_activated") h1Log(event.message || event.detail || "Fallback activated");
+  if (event.type === "job_failed") { h1SetGait("ERROR"); showToast(event.error || "Robot job failed."); }
+  if (event.type === "h1_joule_answer") {
+    const el = h1$("#h1-joule-answer"); el.classList.remove("pending");
+    el.textContent = event.provider && event.provider !== "mock" ? `Joule (${event.model}): ${event.answer}` : `Joule (local): ${event.answer}`;
+    h1.plan = (event.steps || []).map((step) => ({ label: step.label, status: "pending" })); h1RenderPlan();
+  }
 }
 
 async function h1RunJob(path, body, button) {
-  if (h1.running) return showToast("Finish or stop the active H1 job first.");
+  if (h1.running) return showToast("Finish or stop the active robot job first.");
   if (button) { button.disabled = true; }
   try {
     const job = await api(path, { method: "POST", body: JSON.stringify(body) });
     h1Watch(job.jobId);
   } catch (error) {
-    showToast(error.message || "Could not start the H1 job.");
+    showToast(error.message || "Could not start the robot job.");
   } finally {
     if (button) setTimeout(() => { button.disabled = false; }, 800);
   }
 }
 
-function runH1Train() { return h1RunJob("/api/humanoid/train", { iterations: Number($("#h1-train-iterations").value || 300), numEnvs: Number($("#h1-train-envs").value || 2048) }, $("#h1-train-run")); }
-function runH1Deploy() { return h1RunJob("/api/humanoid/deploy", { checkpoint: $("#h1-deploy-checkpoint").value, terrain: $("#h1-deploy-terrain").value }, $("#h1-deploy-run")); }
+function runH1Train() { return h1RunJob("/api/humanoid/train", { iterations: Number(h1$("#h1-train-iterations").value || 300), numEnvs: Number(h1$("#h1-train-envs").value || 2048) }, h1$("#h1-train-run")); }
+function runH1Deploy() { return h1RunJob("/api/humanoid/deploy", { checkpoint: h1$("#h1-deploy-checkpoint").value, terrain: h1$("#h1-deploy-terrain").value, robot: h1$("#h1-robot").value, environment: h1$("#h1-environment").value }, h1$("#h1-deploy-run")); }
 function runH1Teleop(command) { return h1RunJob("/api/humanoid/teleop", command, null); }
+function runH1Navigate(place) { h1.path = null; return h1RunJob("/api/humanoid/navigate", { place }, null); }
+function runH1Camera(view) { return h1RunJob("/api/humanoid/camera", { view }, null); }
 function runH1Joule(goal) {
   const trimmed = goal.trim();
-  if (!trimmed) return showToast("Tell the H1 what to do first.");
-  const answerEl = $("#h1-joule-answer"); answerEl.classList.add("pending"); answerEl.textContent = "Joule is thinking…";
-  return h1RunJob("/api/humanoid/joule", { goal: trimmed }, $("#h1-joule-run"));
+  if (!trimmed) return showToast("Tell the robot what to do first.");
+  const answerEl = h1$("#h1-joule-answer"); answerEl.classList.add("pending"); answerEl.textContent = "Joule is thinking…";
+  h1.plan = []; h1RenderPlan();
+  return h1RunJob("/api/humanoid/joule", { goal: trimmed }, h1$("#h1-joule-run"));
 }
 
 async function h1RefreshStatus() {
   try {
     const status = await api("/api/humanoid/descriptor");
-    $("#h1-isaac-strip").classList.toggle("connected", Boolean(status.connected));
-    $("#h1-isaac-status").textContent = `Isaac Sim · ${status.connected ? "CONNECTED" : "OFFLINE"}`;
-    $("#h1-isaac-executor").textContent = status.connected ? `${status.executor.name}${status.executor.dryRun ? " · dry run" : ""}` : "no executor connected";
+    const ex = status.executor;
+    h1$("#h1-isaac-strip").classList.toggle("connected", Boolean(status.connected));
+    h1$("#h1-isaac-status").textContent = `Isaac Sim · ${status.connected ? "CONNECTED" : "OFFLINE"}`;
+    h1$("#h1-isaac-executor").textContent = status.connected ? `${ex.robotLabel || ex.name}${ex.environment ? ` · ${status.environments?.[ex.environment] || ex.environment}` : ""}${ex.dryRun ? " · dry run" : ""}` : "no executor connected";
+    if (status.connected && ex?.robot) { h1SetRobot(ex.robot, ex.environment); if (ex.view && !h1.running) h1SetView(ex.view); }
+    if (status.connected && ex?.pose && !h1.running) { h1.pose = ex.pose; h1$("#h1-pose").textContent = `x ${ex.pose.x} · y ${ex.pose.y} · heading ${Math.round((ex.pose.heading * 180) / Math.PI)}°`; h1DrawMap(); }
+    if (status.frameAt && status.frameAt !== h1.frameAt && !h1.running) {
+      h1.frameAt = status.frameAt;
+      api("/api/humanoid/frame").then((frame) => { h1$("#h1-snapshot").classList.add("has-frame"); h1$("#h1-snapshot-img").src = frame.image; h1Log(frame.caption || "Robot camera · live"); }).catch(() => {});
+    }
+    const version = status.map?.version || 0;
+    if (version !== h1.mapVersion) { h1.mapVersion = version; h1LoadMap(); }
     if (!h1.running) {
       const active = await api("/api/humanoid/active");
       if (active.length) h1Watch(active[0].id);
@@ -581,14 +699,60 @@ async function h1RefreshStatus() {
   } catch { /* informational */ }
 }
 
+// Mission view: the whole screen becomes the robot view; Joule, the map and the controls float on top.
+function h1ToggleMission(force) {
+  const lab = h1$("#humanoid-lab"), on = typeof force === "boolean" ? force : !lab.classList.contains("mission");
+  lab.classList.toggle("mission", on);
+  document.body.classList.toggle("h1-mission-open", on);
+  h1$("#h1-mission-toggle").textContent = on ? "✕ Exit mission view" : "⤢ Mission view";
+  if (on && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => { /* fixed overlay still covers the window */ });
+  if (!on && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  if (on) h1$("#h1-joule-goal")?.focus({ preventScroll: true });
+  requestAnimationFrame(h1DrawMap);
+}
+
+// Joule floating over the Isaac Sim viewer: Document Picture-in-Picture keeps a small always-on-top
+// window (Chrome / Edge 116+). The Joule block and the destinations move into it and back on close,
+// so every listener keeps working.
+async function h1FloatJoule() {
+  if (h1.pip) { h1.pip.close(); return; }
+  if (!("documentPictureInPicture" in window)) return showToast("Floating Joule needs Chrome or Edge on desktop. Mission view works everywhere.");
+  const pip = await documentPictureInPicture.requestWindow({ width: 420, height: 640 });
+  for (const sheet of document.styleSheets) {
+    try { const style = pip.document.createElement("style"); style.textContent = [...sheet.cssRules].map((rule) => rule.cssText).join("\n"); pip.document.head.appendChild(style); }
+    catch { if (sheet.href) { const link = pip.document.createElement("link"); link.rel = "stylesheet"; link.href = sheet.href; pip.document.head.appendChild(link); } }
+  }
+  pip.document.title = "Joule · robot mission";
+  pip.document.body.className = "h1-pip";
+  const moved = [document.querySelector(".h1-joule"), document.querySelector(".h1-places-wrap")].filter(Boolean).map((el) => [el, el.parentNode, el.nextSibling]);
+  const card = pip.document.createElement("div"); card.className = "h1-pip-card";
+  for (const [el] of moved) card.append(el);
+  pip.document.body.append(card);
+  h1.pip = pip; h1$("#h1-joule-float").textContent = "◱ Dock Joule";
+  pip.addEventListener("pagehide", () => {
+    for (const [el, parent, next] of moved.reverse()) parent.insertBefore(el, next);
+    h1.pip = null; h1$("#h1-joule-float").textContent = "◳ Float over viewer";
+  });
+}
+
 function initHumanoidLab() {
-  $("#h1-train-run").addEventListener("click", runH1Train);
-  $("#h1-deploy-run").addEventListener("click", runH1Deploy);
-  const MOVES = { forward: { vx: 0.6, vy: 0, yaw: 0 }, backward: { vx: -0.4, vy: 0, yaw: 0 }, left: { vx: 0, vy: 0, yaw: 0.6 }, right: { vx: 0, vy: 0, yaw: -0.6 }, stop: { vx: 0, vy: 0, yaw: 0, durationMs: 500 } };
-  $$("[data-h1-move]").forEach((button) => button.addEventListener("click", () => runH1Teleop({ ...MOVES[button.dataset.h1Move], durationMs: MOVES[button.dataset.h1Move].durationMs || 4000 })));
-  h1.pose = { x: 0, heading: 0 }; h1.hasIsaacFrame = false;
+  h1$("#h1-train-run").addEventListener("click", runH1Train);
+  h1$("#h1-deploy-run").addEventListener("click", runH1Deploy);
+  h1$("#h1-robot").addEventListener("change", (event) => { h1.selectTouched = true; h1$("#h1-train-task").value = H1_TASK[event.target.value] || H1_TASK.h1; });
+  h1$("#h1-environment").addEventListener("change", () => { h1.selectTouched = true; });
+  // Walk ≈ 4.5 m per press (0.9 m/s, inside the H1/Go2 training range); turns ≈ 90°.
+  const MOVES = { forward: { vx: 0.9, vy: 0, yaw: 0, durationMs: 5000 }, backward: { vx: -0.4, vy: 0, yaw: 0, durationMs: 3000 }, left: { vx: 0, vy: 0, yaw: 0.8, durationMs: 2000 }, right: { vx: 0, vy: 0, yaw: -0.8, durationMs: 2000 }, stop: { vx: 0, vy: 0, yaw: 0, durationMs: 500 } };
+  $$("[data-h1-move]").forEach((button) => button.addEventListener("click", () => runH1Teleop({ ...MOVES[button.dataset.h1Move] })));
+  $$("[data-h1-view]").forEach((button) => button.addEventListener("click", () => runH1Camera(button.dataset.h1View)));
+  h1$("#h1-find-robot").addEventListener("click", () => runH1Camera(h1.view || "chase"));
+  h1$("#h1-mission-toggle").addEventListener("click", () => h1ToggleMission());
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape" && $("#humanoid-lab").classList.contains("mission")) h1ToggleMission(false); });
+  const goTo = (event) => { const target = event.target.closest("[data-place]"); if (target) runH1Navigate(target.dataset.place); };
+  h1$("#h1-places").addEventListener("click", goTo);
+  h1$("#h1-map").addEventListener("click", goTo);
+  h1$("#h1-map").addEventListener("keydown", (event) => { if (event.key === "Enter") goTo(event); });
   // Remembered per-browser only (localStorage): the Brev "/viewer" URL for this session's Isaac Sim instance.
-  const urlInput = $("#h1-viewer-url"), link = $("#h1-viewer-link");
+  const urlInput = h1$("#h1-viewer-url"), link = h1$("#h1-viewer-link");
   const syncViewerLink = () => {
     const url = urlInput.value.trim();
     if (url) { link.href = url; link.classList.remove("disabled"); } else { link.href = "#"; link.classList.add("disabled"); }
@@ -597,20 +761,13 @@ function initHumanoidLab() {
   syncViewerLink();
   urlInput.addEventListener("input", () => { try { localStorage.setItem("h1-isaac-viewer-url", urlInput.value.trim()); } catch { /* private mode */ } syncViewerLink(); });
 
-  const goalInput = $("#h1-joule-goal");
-  $("#h1-joule-run").addEventListener("click", () => runH1Joule(goalInput.value));
+  const goalInput = h1$("#h1-joule-goal");
+  h1$("#h1-joule-run").addEventListener("click", () => runH1Joule(goalInput.value));
   goalInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); runH1Joule(goalInput.value); } });
-  api("/api/humanoid/joule/prompts").then((data) => {
-    const wrap = $("#h1-joule-presets");
-    for (const prompt of data.prompts || []) {
-      const button = document.createElement("button");
-      button.type = "button"; button.textContent = prompt;
-      button.addEventListener("click", () => { goalInput.value = prompt; runH1Joule(prompt); });
-      wrap.appendChild(button);
-    }
-  }).catch(() => { /* presets are a convenience; the free-text input still works */ });
-
-  h1RefreshStatus(); setInterval(h1RefreshStatus, 5000);
+  h1LoadPrompts(); h1LoadMap();
+  // faster refresh in Mission view (live frame + robot marker), slower otherwise
+  let tick = 0;
+  h1RefreshStatus(); setInterval(() => { tick += 1; if (h1$("#humanoid-lab").classList.contains("mission") || h1.pip || tick % 2 === 0) h1RefreshStatus(); }, 1500);
 }
 
 function consumeEvent(event) {

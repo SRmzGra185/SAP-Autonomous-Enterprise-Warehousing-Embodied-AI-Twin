@@ -403,3 +403,85 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .h1-joule-row input { flex: 1; height: 29px; padding: 0 9px; border: 1px solid #dbe6ee; border-radius: 5px; outline: 0; background: #fff; color: #2c4457; font-size: 10px; }
 .h1-joule-answer { margin: 7px 0 0; font-size: 9.5px; color: #425b6c; line-height: 1.5; min-height: 1em; }
 .h1-joule-answer.pending { color: #92a0aa; font-style: italic; }
+/* robot selector, camera views, warehouse map, destinations, Joule mission plan, Mission view */
+.h1-stage-actions { display: flex; align-items: center; gap: 8px; }
+.h1-mission-toggle { padding: 5px 10px; border: 1px solid #c9b8ff; border-radius: 999px; background: #f5f1ff; color: #5b3fd6; font-size: 9px; font-weight: 700; cursor: pointer; }
+.h1-mission-toggle:hover { background: #ede9fe; }
+.h1-view-bar { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.h1-view-bar button { padding: 4px 10px; border: 1px solid #dbe6ee; border-radius: 999px; background: #f6f9fb; color: #355a75; font-size: 9px; cursor: pointer; }
+.h1-view-bar button:hover { background: #eaf1f6; }
+.h1-view-bar button.active { border-color: #5b3fd6; background: #5b3fd6; color: #fff; }
+.h1-view-bar #h1-find-robot { margin-left: auto; border-color: #c9b8ff; color: #5b3fd6; background: #f5f1ff; }
+.h1-map-wrap { margin-top: 8px; border: 1px solid #dbe6eb; border-radius: 9px; background: #fff; padding: 7px 8px 8px; }
+.h1-map-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 5px; }
+.h1-map-head em { font-style: normal; font-size: 8px; color: #92a0aa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.h1-map { display: block; width: 100%; height: 210px; border-radius: 7px; background: #faf8ff; }
+.h1-map-wrap.empty .h1-map { height: 46px; }
+.h1-map text { fill: #1a0f5e; font-family: "72", "Segoe UI", Arial, sans-serif; font-weight: 700; pointer-events: none; }
+.h1-map-place { cursor: pointer; }
+.h1-map-place:hover circle, .h1-map-place:focus circle { fill: #9333ea; }
+.h1-places-wrap { margin-top: 10px; }
+.h1-places { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.h1-places em { font-style: normal; font-size: 9px; color: #92a0aa; }
+.h1-place { padding: 4px 9px; border: 1px solid #c9b8ff; border-radius: 999px; background: #f5f1ff; color: #5b3fd6; font-size: 8.5px; font-weight: 700; cursor: pointer; }
+.h1-place:hover { background: #ede9fe; }
+.h1-place.kind-start { border-color: #b7e4c7; background: #f0fbf4; color: #15803d; }
+.h1-place.kind-forklift, .h1-place.kind-pallet, .h1-place.kind-boxes { border-color: #bfd7f5; background: #f1f7ff; color: #1565c0; }
+.h1-plan { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; counter-reset: step; }
+.h1-plan li { counter-increment: step; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; padding: 6px 8px; border: 1px solid #e4e0f7; border-radius: 7px; background: #faf8ff; font-size: 9.5px; color: #425b6c; }
+.h1-plan li::before { content: counter(step); display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; background: #1a0f5e; color: #fff; font-size: 8px; font-weight: 700; }
+.h1-plan li em { font-style: normal; color: #92a0aa; font-size: 8.5px; margin-left: auto; }
+.h1-plan li.running { border-color: #9333ea; background: #f5f1ff; color: #1a0f5e; font-weight: 700; }
+.h1-plan li.done::before { content: "✓"; background: #16a34a; }
+.h1-plan li.failed::before { content: "!"; background: #dc2626; }
+/* Joule header (star + name, as in the Soriana Fiori assistant) */
+.h1-joule-head { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.h1-joule-star { width: 26px; height: 26px; flex-shrink: 0; filter: drop-shadow(0 3px 8px rgba(120, 88, 255, .35)); }
+.h1-joule-head strong { display: block; font-size: 13px; font-weight: 700; color: #5b3fd6; }
+.h1-joule-head span { display: block; font-size: 8.5px; color: #8f86b8; }
+.h1-joule-float { margin-left: auto; padding: 5px 10px; border: 1px solid #c9b8ff; border-radius: 999px; background: #f5f1ff; color: #5b3fd6; font-size: 9px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.h1-joule-float:hover { background: #ede9fe; }
+
+/* Mission view: full screen robot view, floating glass cards on top */
+body.h1-mission-open { overflow: hidden; }
+body.h1-mission-open .toast { z-index: 1000; }
+.humanoid-lab.mission { position: fixed; inset: 0; z-index: 900; margin: 0; border: 0; border-radius: 0; background: #0d0833; overflow: hidden; }
+.humanoid-lab.mission > .panel-heading { position: absolute; z-index: 3; top: 16px; left: 18px; right: 460px; margin: 0; padding: 10px 14px; border: 0; border-radius: 14px; background: rgba(13, 8, 51, .55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.humanoid-lab.mission > .panel-heading p { display: none; }
+.humanoid-lab.mission > .panel-heading h2 { color: #fff; font-size: 15px; }
+.humanoid-lab.mission > .panel-heading .eyebrow { color: #c4b5fd; }
+.humanoid-lab.mission .humanoid-grid { position: absolute; inset: 0; display: block; min-height: 0; background: transparent; border: 0; }
+.humanoid-lab.mission .humanoid-stage { position: absolute; inset: 0; padding: 0; background: #0d0833; overflow: hidden; }
+.humanoid-lab.mission .h1-snapshot { position: absolute; inset: 0; margin: 0; border: 0; border-radius: 0; background: radial-gradient(ellipse at 40% 40%, #2d1580, #0d0833 70%); }
+.humanoid-lab.mission .h1-snapshot img { width: 100%; height: 100%; aspect-ratio: auto; object-fit: cover; border-radius: 0; background: transparent; }
+.humanoid-lab.mission .h1-snapshot::before { color: #c4b5fd; font-size: 13px; inset: 0; }
+.humanoid-lab.mission .h1-snapshot figcaption { position: absolute; left: calc(50% - 220px); bottom: 20px; transform: translateX(-50%); max-width: 46vw; padding: 7px 16px; border-radius: 999px; background: rgba(13, 8, 51, .62); color: #ede9fe; font-size: 11px; letter-spacing: .02em; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.humanoid-lab.mission .humanoid-stage > .robot-section-heading { position: absolute; z-index: 3; top: 98px; left: 18px; gap: 12px; padding: 8px 12px; border-radius: 12px; background: rgba(13, 8, 51, .55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+.humanoid-lab.mission .humanoid-stage > .robot-section-heading strong { color: #fff; }
+.humanoid-lab.mission .humanoid-stage > .robot-section-heading .eyebrow { color: #c4b5fd; }
+.humanoid-lab.mission .h1-view-bar { position: absolute; z-index: 3; top: 150px; left: 18px; margin: 0; }
+.humanoid-lab.mission .h1-view-bar button { background: rgba(255, 255, 255, .9); }
+.humanoid-lab.mission .h1-view-bar button.active { background: #5b3fd6; color: #fff; }
+.humanoid-lab.mission .h1-map-wrap { position: absolute; z-index: 3; top: 16px; right: 18px; width: 420px; margin: 0; border: 0; border-radius: 20px; background: linear-gradient(180deg, #ffffff 0%, #faf8ff 60%, #fff0f8 100%); box-shadow: 0 8px 40px rgba(88, 62, 214, .18), 0 2px 12px rgba(88, 62, 214, .08); padding: 10px 12px 12px; }
+.humanoid-lab.mission .h1-map { height: 220px; }
+.humanoid-lab.mission .h1-pose-strip { position: absolute; z-index: 3; left: 18px; bottom: 18px; width: 360px; margin: 0; border: 0; background: rgba(255, 255, 255, .9); }
+.humanoid-lab.mission .h1-viewer-row { display: none; }
+.humanoid-lab.mission .humanoid-panel { position: absolute; z-index: 4; top: 300px; right: 18px; bottom: 18px; width: 420px; display: flex; flex-direction: column; padding: 14px 16px; border-radius: 20px; background: linear-gradient(180deg, #ffffff 0%, #faf8ff 60%, #fff0f8 100%); box-shadow: 0 8px 40px rgba(88, 62, 214, .18), 0 2px 12px rgba(88, 62, 214, .08); overflow: auto; }
+.humanoid-lab.mission .h1-train-block, .humanoid-lab.mission .h1-deploy-block { display: none; }
+.humanoid-lab.mission .h1-joule { order: -2; margin-top: 0; }
+.humanoid-lab.mission .h1-joule-head { margin-top: 0; }
+.humanoid-lab.mission .h1-places-wrap { order: -1; margin: 10px 0 4px; }
+.humanoid-lab.mission .humanoid-panel > .robot-section-heading { margin-top: 12px !important; }
+.humanoid-lab.mission .h1-teleop-pad button { min-width: 78px; }
+.humanoid-lab.mission .h1-joule-answer { font-size: 11px; color: #2c2566; }
+.humanoid-lab.mission .h1-joule-presets button { font-size: 9.5px; padding: 5px 10px; border-color: #e4dcff; background: #fff; color: #5b3fd6; }
+.humanoid-lab.mission .h1-joule-row input { height: 34px; font-size: 11px; border-color: #c9b8ff; border-radius: 999px; padding: 0 14px; }
+@media (max-width: 1100px) { .humanoid-lab.mission .humanoid-panel, .humanoid-lab.mission .h1-map-wrap { width: 340px; } .humanoid-lab.mission > .panel-heading { right: 380px; } .humanoid-lab.mission .h1-snapshot figcaption { left: calc(50% - 180px); } }
+
+/* Joule floating over the Isaac Sim viewer (Document Picture-in-Picture window) */
+body.h1-pip { margin: 0; min-height: 100vh; background: linear-gradient(180deg, #ffffff 0%, #faf8ff 60%, #fff0f8 100%); font-family: "72", "Segoe UI", Arial, sans-serif; }
+.h1-pip-card { padding: 14px 16px; }
+.h1-pip-card .h1-joule-head { margin-top: 0; }
+.h1-pip-card .h1-joule-float { display: none; }
+.h1-pip-card .h1-joule-answer { font-size: 11px; }
+.h1-pip-card .h1-joule-row input { height: 34px; font-size: 11px; border-radius: 999px; padding: 0 14px; border-color: #c9b8ff; }

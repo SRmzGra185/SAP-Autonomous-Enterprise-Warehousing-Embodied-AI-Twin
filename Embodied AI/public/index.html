@@ -113,45 +113,61 @@
       </section>
 
       <section class="humanoid-lab panel hidden" id="humanoid-lab">
-        <div class="panel-heading robot-lab-heading"><div><span class="eyebrow">DIGITAL TWIN ROBOTICS / ISAAC LAB · ISAAC SIM · ROS</span><h2>Unitree H1 · Locomotion Training &amp; Teleoperation</h2><p>Software-in-the-loop humanoid workflow, modeled on NVIDIA's Digital Twin Robotics module: train a locomotion policy in Isaac Lab, deploy it on the H1 in Isaac Sim, then teleoperate.</p></div><div class="isaac-strip" id="h1-isaac-strip"><span class="isaac-dot"></span><strong id="h1-isaac-status">Isaac Sim · OFFLINE</strong><em id="h1-isaac-executor">no executor connected</em></div></div>
+        <div class="panel-heading robot-lab-heading"><div><span class="eyebrow">DIGITAL TWIN ROBOTICS / ISAAC LAB · ISAAC SIM · ROS</span><h2 id="h1-lab-title">Unitree H1 &amp; Go2 · Warehouse Locomotion, Navigation &amp; Teleoperation</h2><p>Software-in-the-loop robotics workflow, modeled on NVIDIA's Digital Twin Robotics module: pick the robot and the warehouse, deploy its locomotion policy in Isaac Sim, then drive it, send it to a rack, or give Joule a mission.</p></div><div class="isaac-strip" id="h1-isaac-strip"><span class="isaac-dot"></span><strong id="h1-isaac-status">Isaac Sim · OFFLINE</strong><em id="h1-isaac-executor">no executor connected</em></div></div>
 
         <div class="humanoid-grid">
           <section class="humanoid-stage">
-            <div class="robot-section-heading"><div><span class="eyebrow">H1 VIEW</span><strong id="h1-stage-title">Robot camera / chase view</strong></div><span class="mesh-badge" id="h1-gait-badge">STANDBY</span></div>
-            <figure class="isaac-snapshot h1-snapshot" id="h1-snapshot"><img id="h1-snapshot-img" alt="Isaac Sim H1 humanoid view" /><figcaption id="h1-snapshot-caption">Waiting for a job…</figcaption></figure>
+            <div class="robot-section-heading"><div><span class="eyebrow" id="h1-stage-eyebrow">ROBOT VIEW</span><strong id="h1-stage-title">Robot camera / chase view</strong></div><div class="h1-stage-actions"><span class="mesh-badge" id="h1-gait-badge">STANDBY</span><button type="button" class="h1-mission-toggle" id="h1-mission-toggle" title="Large view with Joule beside it (Esc to exit)">⤢ Mission view</button></div></div>
+            <div class="h1-view-bar" role="group" aria-label="Camera">
+              <button type="button" data-h1-view="chase" class="active">Chase</button><button type="button" data-h1-view="wide">Wide</button><button type="button" data-h1-view="top">Top</button><button type="button" id="h1-find-robot" title="Point the Isaac Sim viewport back at the robot">⌖ Find robot</button>
+            </div>
+            <figure class="isaac-snapshot h1-snapshot" id="h1-snapshot"><img id="h1-snapshot-img" alt="Isaac Sim robot view" /><figcaption id="h1-snapshot-caption">Waiting for a job…</figcaption></figure>
+            <div class="h1-map-wrap" id="h1-map-wrap">
+              <div class="h1-map-head"><span class="eyebrow">WAREHOUSE MAP · PHYSX SCAN</span><em id="h1-map-meta">No map yet · deploy a robot with Isaac Sim connected</em></div>
+              <svg id="h1-map" class="h1-map" viewBox="0 0 10 6" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Warehouse occupancy map with the robot position and destinations"></svg>
+            </div>
             <div class="h1-pose-strip"><span>Position</span><strong id="h1-pose">x 0.0 · y 0.0 · heading 0°</strong><span>Checkpoint</span><strong id="h1-checkpoint">none loaded</strong></div>
             <div class="h1-viewer-row"><label>Isaac Sim viewer URL <input id="h1-viewer-url" type="url" placeholder="https://isaac-xxxxx.brevlab.com/viewer" /></label><a id="h1-viewer-link" class="h1-viewer-link" href="#" target="_blank" rel="noreferrer">↗ Open Isaac Sim viewer</a></div>
           </section>
 
           <section class="humanoid-panel">
-            <div class="robot-section-heading"><div><span class="eyebrow">1 · TRAIN</span><strong>Isaac Lab locomotion policy</strong></div></div>
-            <div class="humanoid-controls">
-              <label>Task<input id="h1-train-task" value="Isaac-Velocity-Flat-H1-v0" disabled /></label>
-              <label>Iterations<input id="h1-train-iterations" type="number" min="20" max="3000" value="300" /></label>
-              <label>Parallel envs<input id="h1-train-envs" type="number" min="64" max="8192" value="2048" /></label>
-              <button id="h1-train-run" class="primary-button">Train policy</button>
-            </div>
-            <div class="h1-chart-wrap"><svg id="h1-reward-chart" viewBox="0 0 560 160" role="img" aria-label="Training reward curve"></svg></div>
-            <div class="h1-train-readout"><span id="h1-train-status">Not started</span><strong id="h1-train-metric">reward — · episode length —</strong></div>
-
-            <div class="robot-section-heading" style="margin-top:14px"><div><span class="eyebrow">2 · DEPLOY</span><strong>Load policy on the H1</strong></div></div>
-            <div class="humanoid-controls">
-              <label>Checkpoint<select id="h1-deploy-checkpoint"><option value="pretrained">NVIDIA pretrained (flat terrain)</option><option value="latest">Latest trained run</option></select></label>
-              <label>Terrain<select id="h1-deploy-terrain"><option value="flat">Flat</option><option value="rough">Rough</option></select></label>
-              <button id="h1-deploy-run" class="secondary-button">Deploy &amp; stand up</button>
+            <div class="h1-block h1-train-block">
+              <div class="robot-section-heading"><div><span class="eyebrow">1 · TRAIN</span><strong>Isaac Lab locomotion policy</strong></div></div>
+              <div class="humanoid-controls">
+                <label>Task<input id="h1-train-task" value="Isaac-Velocity-Flat-H1-v0" disabled /></label>
+                <label>Iterations<input id="h1-train-iterations" type="number" min="20" max="3000" value="300" /></label>
+                <label>Parallel envs<input id="h1-train-envs" type="number" min="64" max="8192" value="2048" /></label>
+                <button id="h1-train-run" class="primary-button">Train policy</button>
+              </div>
+              <div class="h1-chart-wrap"><svg id="h1-reward-chart" viewBox="0 0 560 160" role="img" aria-label="Training reward curve"></svg></div>
+              <div class="h1-train-readout"><span id="h1-train-status">Not started</span><strong id="h1-train-metric">reward — · episode length —</strong></div>
             </div>
 
-            <div class="robot-section-heading" style="margin-top:14px"><div><span class="eyebrow">3 · TELEOPERATE</span><strong>Drive the H1</strong></div></div>
+            <div class="h1-block h1-deploy-block">
+              <div class="robot-section-heading" style="margin-top:14px"><div><span class="eyebrow">2 · DEPLOY</span><strong>Robot, warehouse and policy</strong></div></div>
+              <div class="humanoid-controls">
+                <label>Robot<select id="h1-robot"><option value="h1">Unitree H1 · humanoid</option><option value="go2">Unitree Go2 · quadruped</option></select></label>
+                <label>Warehouse<select id="h1-environment"><option value="full_warehouse">Full warehouse (racks, pallets, forklifts)</option><option value="warehouse_shelves">Warehouse · multiple shelves</option><option value="warehouse_forklifts">Warehouse · forklifts</option><option value="warehouse">Simple warehouse</option><option value="grid">Empty grid</option></select></label>
+                <label>Checkpoint<select id="h1-deploy-checkpoint"><option value="pretrained">NVIDIA pretrained (flat terrain)</option><option value="latest">Latest trained run</option></select></label>
+                <input type="hidden" id="h1-deploy-terrain" value="flat" />
+                <button id="h1-deploy-run" class="secondary-button">Deploy &amp; stand up</button>
+              </div>
+            </div>
+
+            <div class="robot-section-heading" style="margin-top:14px"><div><span class="eyebrow">3 · DRIVE &amp; NAVIGATE</span><strong id="h1-drive-title">Drive the robot</strong></div></div>
             <div class="h1-teleop-pad">
               <button data-h1-move="forward" class="secondary-button">↑ Walk</button>
               <div class="h1-teleop-row"><button data-h1-move="left" class="secondary-button">↺ Turn L</button><button data-h1-move="stop" class="secondary-button">■ Stop</button><button data-h1-move="right" class="secondary-button">↻ Turn R</button></div>
               <button data-h1-move="backward" class="secondary-button">↓ Back</button>
             </div>
+            <div class="h1-places-wrap"><span class="eyebrow">GO TO</span><div class="h1-places" id="h1-places"><em>Destinations appear when Isaac Sim maps the warehouse.</em></div></div>
             <div class="h1-joule">
-              <p class="h1-hint">Or ask Joule: “H1, walk to the AS/RS rack.” Teleoperation and Joule commands share the same executor queue.</p>
+              <div class="h1-joule-head"><svg class="h1-joule-star" viewBox="31.6 31.6 33 33" aria-hidden="true"><defs><linearGradient id="h1JouleGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a374ff"/><stop offset="1" stop-color="#5b3fd6"/></linearGradient></defs><path fill="url(#h1JouleGrad)" d="M61.72,50.1c-6.52,2.2-9.42,5.1-11.63,11.62-.64,1.89-3.33,1.89-3.97,0-2.21-6.52-5.1-9.42-11.63-11.62-1.89-.64-1.89-3.35,0-3.99,6.52-2.2,9.42-5.1,11.63-11.62.64-1.89,3.33-1.89,3.97,0,2.21,6.52,5.1,9.42,11.63,11.62,1.89.64,1.89,3.35,0,3.99Z"/></svg><div><strong>Joule</strong><span>Mission assistant · SAP AI Core</span></div><button type="button" id="h1-joule-float" class="h1-joule-float" title="Open Joule in a small window that floats on top of the Isaac Sim viewer (Chrome / Edge)">◳ Float over viewer</button></div>
+              <p class="h1-hint">Or give Joule a mission: “Go to Rack 3, show me a wide view and come back to the start.” Joule plans on the live warehouse map; the robot finds its own route around the shelves.</p>
               <div class="h1-joule-presets" id="h1-joule-presets"></div>
-              <div class="h1-joule-row"><input id="h1-joule-goal" maxlength="300" placeholder="Tell the H1 what to do…" /><button id="h1-joule-run" class="secondary-button">Ask Joule</button></div>
+              <div class="h1-joule-row"><input id="h1-joule-goal" maxlength="300" placeholder="Tell the robot what to do…" /><button id="h1-joule-run" class="secondary-button">Ask Joule</button></div>
               <p class="h1-joule-answer" id="h1-joule-answer"></p>
+              <ol class="h1-plan" id="h1-plan" hidden></ol>
             </div>
           </section>
         </div>
