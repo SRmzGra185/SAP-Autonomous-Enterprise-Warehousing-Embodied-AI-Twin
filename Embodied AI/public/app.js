@@ -1484,7 +1484,12 @@ async function boot() {
     selectRobotScenario(workflow.scenarioId);
     $("#robot-mode").value = workflow.mode; $("#robot-cycles").value = workflow.cycles; $("#robot-speed").value = workflow.speed;
     for (const [key, id] of Object.entries({ sku: "case-sku", rfidEpc: "case-rfid", quantity: "case-quantity", destination: "case-destination", rackState: "case-rack-state" })) $("#" + id).value = workflow.caseContext[key];
-    const job = await runRobotRoutine(); if (!job) throw new Error("Routine was not queued.");
+    const job = await runRobotRoutine(); if (!job) throw new Error("Finish or stop the current run first; the routine was not queued.");
+    // the approval panel lives in the Workcell, far above this chat: go there so the pause is visible
+    document.querySelector("#mission-scenario")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    for (let i = 0; i < 40 && $("#approval-panel").classList.contains("hidden"); i += 1) await new Promise((resolve) => setTimeout(resolve, 150));
+    if (!$("#approval-panel").classList.contains("hidden")) { $("#approval-panel").scrollIntoView({ behavior: "smooth", block: "center" }); showToast("Routine paused for your approval: complete the review and approve, or reject."); }
+    else showToast("Routine queued. Follow it in the Workcell.");
   } });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/service-worker.js").catch(() => {});
 }

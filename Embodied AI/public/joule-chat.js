@@ -296,7 +296,10 @@ export function initJouleChat({ api, getScenario, runRecipe, activeLabel }) {
       await runRecipe({ scenarioId: recipe.scenarioId, mode: recipe.mode, cycles: 1, speed: 1, caseContext: recipe.caseContext });
       if (!disposed && modal.open) modal.close();
       if (!disposed) modalStatus.textContent = 'Handed to the local app. Review progress and assisted approvals there; completion is not assumed.';
-    } catch { if (!disposed) modalStatus.textContent = 'Could not confirm queuing. Check app progress before retrying.'; }
+      if (!disposed) status.textContent = recipe.mode === 'assisted'
+        ? 'Routine queued in assisted mode · it pauses before each step: approve it in the approval panel (Workcell). Simulation mode runs without pauses.'
+        : 'Routine queued in simulation · follow it in the Workcell; nothing is written to SAP or robots.';
+    } catch (error) { if (!disposed) { modalStatus.textContent = `Could not queue: ${String(error?.message || 'check app progress before retrying').slice(0, 160)}`; status.textContent = modalStatus.textContent; } }
     finally { if (!disposed) lock(false); }
   }
   const controller = { refreshSelection, destroy() {
