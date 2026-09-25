@@ -497,3 +497,6 @@ body.h1-pip { margin: 0; min-height: 100vh; background: linear-gradient(180deg, 
 .analytics-link .joule-icon, .secondary-button .joule-icon, .operations-actions .joule-icon { margin-right: 5px; }
 .h1-joule-head .joule-icon { width: 26px; height: 26px; }
 .workspace-joule-title { display: flex; align-items: center; gap: 7px; }
+/* Joule routine chat in the twin: Joule icon on its title */
+.joule-chat h2 { display: flex; align-items: center; gap: 8px; }
+.joule-chat h2::before { content: ""; width: 22px; height: 22px; flex-shrink: 0; background: var(--joule-violet); -webkit-mask: var(--joule-icon) center / contain no-repeat; mask: var(--joule-icon) center / contain no-repeat; }
