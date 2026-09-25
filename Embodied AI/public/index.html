@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/exception-ui.css" />
     <link rel="stylesheet" href="/experiments-ui.css" />
     <link rel="stylesheet" href="/joule-chat.css" />
+    <link rel="stylesheet" href="/editor-ui.css" />
   </head>
   <body class="operations-ui">
     <header class="topbar">
@@ -25,6 +26,7 @@
 
     <main class="app-shell">
       <section class="ribbon">
+        <div class="editor-history" id="editor-history" aria-label="Model history"><span>Model editing</span><button data-command="undo" disabled title="Undo model change (Ctrl+Z)">↶ Undo</button><button data-command="redo" disabled title="Redo model change (Ctrl+Shift+Z)">↷ Redo</button><button data-command="save" title="Save model snapshot (Ctrl+S)">Save Snapshot</button><small>Moves · trails · capacity · objects</small></div>
         <div class="ribbon-tabs" role="tablist"><button class="active" data-ribbon="model">Model</button><button data-ribbon="simulate">Simulate</button><button data-ribbon="integrate">Integrate</button><button data-ribbon="audit">Governance</button><button data-ribbon="agent">Joule Agents</button><button data-ribbon="robot">Embodied AI Lab</button><button data-ribbon="humanoid">Digital Twin Robotics</button></div>
         <div class="ribbon-tools" id="ribbon-tools"></div>
       </section>
@@ -48,7 +50,7 @@
           <div class="mission-readout"><div><span id="mission-status" data-tone="idle">Ready · simulation</span><strong id="mission-step-title">Watch the business event become a physical routine</strong><p id="mission-detail">Choose a scenario, then Run in twin. Assisted pauses before each action.</p></div><div><span id="mission-counter">1 cycle</span><strong id="mission-route">Governed context → Local plan → Simulated routine → Evidence</strong><p id="mission-sensor">Synthetic sensors · real execution disconnected</p></div></div>
           <div class="model-stage">
             <svg id="model-canvas" viewBox="0 0 1100 650" role="img" aria-label="2D discrete event model"></svg>
-            <div id="scene-3d" class="scene-3d hidden"><canvas id="webgl-world" aria-label="Rendered 3D Industry 4.0 environment"></canvas><div id="mesh-labels" class="mesh-labels"></div><div class="camera-label">DRAG TO ORBIT · SHIFT + DRAG TO PAN · WHEEL TO ZOOM</div><div class="scene-zone-labels hidden" id="scene-zone-labels"></div><div class="flow-legend"><span class="flow-blue"></span>business-event route <span class="flow-green"></span>active execution <span class="flow-purple"></span>evidence return</div></div>
+            <div id="scene-3d" class="scene-3d hidden"><canvas id="webgl-world" aria-label="Rendered 3D Industry 4.0 environment"></canvas><div id="mesh-labels" class="mesh-labels"></div><div class="camera-label">DRAG OBJECT: MOVE · EMPTY FLOOR: ORBIT · SHIFT: PAN · WHEEL: ZOOM</div><div class="scene-zone-labels hidden" id="scene-zone-labels"></div><div class="flow-legend"><span class="flow-blue"></span>business-event route <span class="flow-green"></span>active execution <span class="flow-purple"></span>evidence return</div></div>
 
             <aside class="object-submenu hidden" id="object-submenu" aria-live="polite"><div class="submenu-heading"><div><span class="eyebrow">OBJECT DEEP DIVE</span><h3 id="submenu-title">Object</h3></div><button id="submenu-close" class="icon-button">×</button></div><div class="submenu-world" id="submenu-world"><canvas id="deep-dive-canvas" aria-label="Rendered object deep dive environment"></canvas></div><p id="submenu-description" class="submenu-description"></p><div class="submenu-stats"><span><small>CAPACITY</small><strong id="submenu-capacity">—</strong></span><span><small>SERVICE</small><strong id="submenu-service">—</strong></span><span><small>PLANE</small><strong>3D MESH</strong></span></div><div class="submenu-actions"><button id="submenu-place" class="primary-button">Place on plane</button><button id="submenu-inspect" class="secondary-button">Inspect</button></div></aside>
 
@@ -211,6 +213,6 @@
     </section>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="/app.js?v=0.9.1-h1fix"></script>
+    <script type="module" src="/app.js?v=0.9.2-sebas-editor"></script>
   </body>
 </html>

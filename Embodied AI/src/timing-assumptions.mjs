@@ -5,7 +5,8 @@ const byNode = {
   "orch-cell": [30, 60, 120], "orch-quality": [20, 45, 120], "orch-pack": [30, 60, 120],
   "orch-rack": [15, 30, 90], "orch-transport": [120, 240, 600], "orch-delivery": [30, 90, 240]
 };
-const byVisual = { unitree: [90,180,420], cobotCell: [30,60,120], rack: [15,30,90], inspectionCell: [20,45,120], conveyor: [15,30,60], loadingDock: [60,120,300] };
+// Swapping geometry must not silently change assumed inspection time. Both need measured calibration.
+const byVisual = { unitree: [90,180,420], quadruped: [90,180,420], unitreeHumanoid: [90,180,420], cobotCell: [30,60,120], rack: [15,30,90], inspectionCell: [20,45,120], conveyor: [15,30,60], loadingDock: [60,120,300] };
 export function timingAssumption(node = {}) {
   const values = byNode[node.id] || (node.layer === "robotics" ? byVisual[node.visual] : null) || [1,2,3];
   return { type: "triangular", min: values[0], mode: values[1], max: values[2] };

@@ -3,6 +3,8 @@ import { createExecutionUI } from "./execution-ui.js";
 import { initConnectionsUI } from "./connections-ui.js";
 import { initExperimentsUI } from "./experiments-ui.js";
 import { initJouleChat } from "./joule-chat.js";
+import { rememberEdit, travelHistory, moveObject, setObjectCapacity, addTrail, buildObjectCatalog } from "./editor-core.js";
+import { UNITREE_MODELS, isUnitree, unitreeModelKey, setRobotRepresentation } from "./robot-models.js";
 
 const svgNS = "http://www.w3.org/2000/svg";
 const state = {
@@ -21,6 +23,12 @@ const state = {
   history: [],
   future: [],
   editMode: true,
+  editTool: "select",
+  trailStart: null,
+  dragBefore: null,
+  simulationRunning: false,
+  experimentRunning: false,
+  saveQueue: Promise.resolve(),
   camera: { x: -12, y: -18, zoom: 1 },
   operationsScope: null,
   agentPlan: null,
@@ -30,6 +38,8 @@ const state = {
   interiorWorld: null,
   session: null,
   interiorTool: null,
+  interiorNodeId: null,
+  interiorDraft: null,
   previousView: "2d",
   robotScenarios: [],
   activeRobotScenario: null,
@@ -64,8 +74,96 @@ function snapshotModel() {
   return structuredClone(state.model);
 }
 
+function canEditModel() { return state.editMode && !state.robotRunning && !state.simulationRunning && !state.experimentRunning; }
+function syncEditorControls() {
+  const enabled=canEditModel(), node=state.model?.nodes.find(n=>n.id===state.selectedId);
+  for (const button of $$('[data-command="undo"]')) button.disabled=!enabled || !state.history.length;
+  for (const button of $$('[data-command="redo"]')) button.disabled=!enabled || !state.future.length;
+  for (const button of $$('[data-editor-tool]')) { button.classList.toggle("active",button.dataset.editorTool===state.editTool); button.setAttribute("aria-pressed",String(button.dataset.editorTool===state.editTool)); }
+  for(const input of $$('[data-capacity-input]')) { input.disabled=!enabled || !node; input.value=node?.capacity ?? ""; }
+  for(const button of $$('[data-capacity-delta]')) button.disabled=!enabled || !node;
+  for(const select of $$('[data-robot-model]')) select.disabled=!enabled;
+  if($("#selected-resource")) $("#selected-resource").textContent=node?.name || "Select an object";
+  document.body.dataset.editorTool=state.editTool;
+  $("#stage-hint-text").textContent=state.editTool==="trail" ? (state.trailStart ? "Trail: choose the destination · Esc cancels" : "Trail: click the source, then the destination · does not rewrite GRAFCET") : "Select: drag an object to move · double-click to open · drag empty floor to orbit · Shift + drag to pan";
+}
+function persistEdit() { void saveModel(false).catch(error=>{showToast("Not saved: "+error.message);logLine("model",error.message,true);}); }
+function finishEdit(before) {
+  if (!rememberEdit(state,before)) { syncEditorControls(); return false; }
+  renderModel(); renderInspector(); persistEdit(); return true;
+}
+function selectObject(id) {
+  if(!nodeById(id)) return;
+  state.selectedId=id;
+  if(state.editTool==="trail" && canEditModel()) {
+    if(!state.trailStart) { state.trailStart=id; showToast("Trail source selected. Click a destination."); }
+    else {
+      try { const before=snapshotModel(); addTrail(state.model,state.trailStart,id); state.trailStart=null; finishEdit(before); showToast("Trail created. GRAFCET execution order is unchanged."); }
+      catch(error) { showToast(error.message); }
+    }
+  }
+  state.meshWorld?.setSelected(id); renderInspector(); syncEditorControls();
+  for(const item of $$(".node-group")) item.classList.toggle("selected",item.dataset.id===id);
+}
+function changeCapacity(value) {
+  if(!canEditModel()) return showToast("Enable Edit Mode and finish active runs before editing capacity.");
+  try { const before=snapshotModel(); setObjectCapacity(state.model,state.selectedId,value); finishEdit(before); }
+  catch(error) { showToast(error.message); syncEditorControls(); }
+}
+function beginMove(id) { state.dragBefore=snapshotModel(); selectObject(id); }
+function endMove(cancelled=false) {
+  const before=state.dragBefore; state.dragBefore=null;
+  if(!before) return;
+  if(cancelled) { state.model=before; renderModel(); renderInspector(); }
+  // Keep the clicked SVG element alive on no-op pointerup so dblclick can fire.
+  else if(!finishEdit(before)) { renderInspector(); }
+}
+
 function nodeById(id) {
   return state.model.nodes.find((node) => node.id === id);
+}
+
+function robotModelControl(node, target) {
+  if (!isUnitree(node)) return "";
+  return `<section class="robot-model-control"><h3>Unitree model</h3>
+    <label>Robot representation <select data-robot-model="${escapeHtml(target)}" ${canEditModel() ? "" : "disabled"}>
+      ${Object.entries(UNITREE_MODELS).map(([key,model])=>`<option value="${key}" ${unitreeModelKey(node)===key ? "selected" : ""}>${escapeHtml(model.label)}</option>`).join("")}
+    </select></label><p>H1 is the humanoid; the quadruped model is not yet specified. Changes the 3D mesh only: role, routes, capacity and demo timing stay unchanged. No hardware is connected.</p></section>`;
+}
+function refreshInteriorRobot() {
+  const node=state.interiorNodeId ? nodeById(state.interiorNodeId) : state.interiorDraft;
+  if (!node) { $("#interior-dive").classList.add("hidden"); return; }
+  $("#interior-title").textContent=node.name;
+  $("#interior-description").textContent=node.subtitle;
+  $("#interior-capacity").textContent=`${node.capacity} resources`;
+  $("#interior-service").textContent=`${node.service} units`;
+  state.interiorWorld?.setModel({nodes:[{...node,id:"interior",x:550,y:325,z:0}],edges:[]});
+  positionInteriorCamera(node);
+  renderInterfaceTab(state.interiorTool); syncEditorControls();
+}
+function positionInteriorCamera(node) {
+  const humanoid=node.visual==="unitreeHumanoid";
+  state.interiorWorld?.setCamera(isUnitree(node)
+    ? {azimuth:1.03,elevation:.27,distance:humanoid?3.8:3.2,target:[0,humanoid ? .92 : .47,0]}
+    : {azimuth:-.62,elevation:.34,distance:6,target:[0,.65,0]});
+}
+function changeRobotRepresentation(target, visual) {
+  if(!canEditModel()) return showToast("Enable Edit Mode and finish active runs before changing a robot.");
+  try {
+    if(target==="preview") {
+      if(!state.interiorDraft || !isUnitree(state.interiorDraft)) return;
+      setRobotRepresentation({nodes:[{...state.interiorDraft,id:"preview"}]},"preview",visual);
+      state.interiorDraft.visual=visual;
+      // Palette prototypes use the chosen model's name; existing workcell roles are preserved.
+      state.interiorDraft.name=UNITREE_MODELS[visual].label;
+      state.interiorDraft.subtitle=UNITREE_MODELS[visual].description;
+      refreshInteriorRobot(); return;
+    }
+    const before=snapshotModel();
+    setRobotRepresentation(state.model,target,visual); finishEdit(before);
+    if(state.interiorNodeId===target && !$("#interior-dive").classList.contains("hidden")) refreshInteriorRobot();
+    showToast(UNITREE_MODELS[visual].label+" applied. Undo available; hardware and demo timing unchanged.");
+  } catch(error) { showToast(error.message); renderInspector(); }
 }
 
 function svgText(parent, x, y, value, className) {
@@ -91,7 +189,8 @@ function renderModel() {
   $("#model-name").textContent = state.model.name;
   $("#model-version").textContent = `v${state.model.version}`;
   const svg = $("#model-canvas"), nodeWidth = modelNodeWidth(), campusLayout = state.model.layout?.includes("campus");
-  svg.setAttribute("viewBox", `0 0 1120 ${Math.max(650, ...state.model.nodes.map(node => node.y + 115))}`);
+  const minX=Math.min(0,...state.model.nodes.map(n=>n.x-30)), minY=Math.min(0,...state.model.nodes.map(n=>n.y-30));
+  svg.setAttribute("viewBox", state.dragViewBox || `${minX} ${minY} ${Math.max(1120,...state.model.nodes.map(n=>n.x+nodeWidth+30))-minX} ${Math.max(650,...state.model.nodes.map(n=>n.y+115))-minY}`);
   svg.replaceChildren();
   const markerDefs = document.createElementNS(svgNS, "defs");
   const marker = document.createElementNS(svgNS, "marker");
@@ -126,12 +225,13 @@ function renderModel() {
     svgText(group, node.x + 14, node.y + 45, shortLabel(node.subtitle, campusLayout ? 24 : 34), "node-subtitle");
     svgText(group, node.x + nodeWidth - 21, node.y + 20, String(node.z).padStart(2, "0"), "node-subtitle");
     group.addEventListener("pointerdown", (event) => startDrag(event, node.id));
-    group.addEventListener("click", (event) => { event.stopPropagation(); state.selectedId = node.id; renderModel(); renderInspector(); });
+    group.addEventListener("click", (event) => { event.stopPropagation(); selectObject(node.id); });
     group.addEventListener("dblclick", () => openObjectSubmenu(toolForNode(node), node));
     svg.appendChild(group);
   }
 
   render3d();
+  syncEditorControls();
 }
 
 function render3d() {
@@ -146,6 +246,7 @@ function render3d() {
 }
 
 function renderInspector() {
+  syncEditorControls();
   const target = state.selectedId ? nodeById(state.selectedId) : null;
   const miniScene = `<div class="inspector-visual"><div class="mini-world"><div class="mini-object ${target?.visual || "tower"}" style="--structure-color:${target?.color || "#2f80ed"}"></div><span>${target ? target.name : "Autonomous operations twin"}</span></div></div>`;
   if (!target) {
@@ -175,8 +276,9 @@ function renderInspector() {
       <div class="key-value"><span>Subtitle</span><b>${target.subtitle}</b></div>
       <div class="key-value"><span>Position</span><b>${Math.round(target.x)}, ${Math.round(target.y)}, ${target.z}</b></div>
     </div>
+    ${robotModelControl(target,target.id)}
     <div class="inspector-section"><h3>DES behavior</h3>
-      <div class="key-value"><span>Capacity</span><b>${target.capacity} resources</b></div>
+      <label class="capacity-field">Parallel capacity <input data-capacity-input type="number" min="1" max="32" step="1" value="${target.capacity}" ${canEditModel() ? "" : "disabled"} /></label><p>How many items this resource can handle at once. Model change; Undo is available.</p>
       <div class="bar-row"><div><span>Configured service time</span><b>${target.service} units</b></div><div class="bar"><i style="width:${Math.min(100, target.service * 12)}%;background:${target.color}"></i></div></div>
     </div>
     <div class="inspector-section"><h3>Safety scope</h3>
@@ -188,30 +290,38 @@ function renderInspector() {
 
 function startDrag(event, id) {
   if (event.button !== 0) return;
-  if (!state.editMode) { showToast("Turn on Edit Mode to rearrange the model."); return; }
+  if (state.editTool!=="select" || !canEditModel()) return;
   state.dragId = id;
-  state.selectedId = id;
+  state.dragPointerOrigin={x:event.clientX,y:event.clientY};
+  state.dragMoved=false;
+  beginMove(id);
+  state.dragViewBox=$("#model-canvas").getAttribute("viewBox");
+  const point=new DOMPoint(event.clientX,event.clientY).matrixTransform($("#model-canvas").getScreenCTM().inverse()), node=nodeById(id);
+  state.dragOffset={x:point.x-node.x,y:point.y-node.y};
   event.preventDefault();
   document.addEventListener("pointermove", dragMove);
   document.addEventListener("pointerup", endDrag, { once: true });
+  document.addEventListener("pointercancel", cancelDrag, { once: true });
 }
 
 function dragMove(event) {
   if (!state.dragId) return;
+  if (!state.dragMoved && Math.hypot(event.clientX-state.dragPointerOrigin.x,event.clientY-state.dragPointerOrigin.y)<4) return;
+  state.dragMoved=true;
   const svg = $("#model-canvas");
   const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(svg.getScreenCTM().inverse());
-  const node = nodeById(state.dragId);
-  node.x = Math.max(8, Math.min(1100 - modelNodeWidth(), point.x - modelNodeWidth() / 2));
-  node.y = Math.max(8, Math.min(Math.max(570, ...state.model.nodes.map(item => item.y + 45)), point.y - 34));
+  moveObject(state.model,state.dragId,point.x-state.dragOffset.x,point.y-state.dragOffset.y);
   renderModel();
 }
 
 async function endDrag() {
   document.removeEventListener("pointermove", dragMove);
+  document.removeEventListener("pointercancel",cancelDrag);
   if (!state.dragId) return;
   state.dragId = null;
-  await saveModel(false);
+  state.dragViewBox=null; endMove();
 }
+function cancelDrag() { document.removeEventListener("pointermove",dragMove); document.removeEventListener("pointerup",endDrag); document.removeEventListener("pointercancel",cancelDrag); state.dragId=null; state.dragViewBox=null; endMove(true); }
 
 const domainScenarios = {
   "asset-management": "autonomous-inspection",
@@ -220,7 +330,7 @@ const domainScenarios = {
   logistics: "warehouse-fulfillment"
 };
 
-const objectDefinitions = Object.fromEntries([
+let objectDefinitions = Object.fromEntries([
   ["connect", "SAP BDC Connect", "Mock shared data products and contracts", "bdc", "tower", "#40566a"],
   ["context", "Governed Operations Context", "Local operational context for the selected scenario", "data", "crate", "#66589c"],
   ["agent", "Joule", "NOT CONNECTED · local bounded mock planning", "agent", "joule", "#a15bea"],
@@ -231,7 +341,21 @@ const objectDefinitions = Object.fromEntries([
   ["approval", "Human Approval Gate", "Server-enforced approval per simulated action", "audit", "gate", "#c7893e"],
   ["evidence", "Evidence", "Recorded events, approvals and audit trail", "audit", "gate", "#814b5b"],
   ["physical", "Physical Workcell", "Local routine and GRAFCET object", "process", "processMachine", "#40566a"]
-].map(([workspace, name, subtitle, kind, visual, color]) => [workspace, { workspace, name, subtitle, kind, visual, color, capacity: 2, service: 3 }]));
+].map(([workspace, name, subtitle, kind, visual, color]) => [workspace, { workspace, name, subtitle, kind:kind==="process"?"bdc":kind, visual, color, capacity: 2, service: 3 }]));
+
+function renderPalette() {
+  const query=$("#palette-search").value.trim().toLowerCase(), list=$("#library-list"); list.replaceChildren();
+  const groups=new Map();
+  for(const [key,definition] of Object.entries(objectDefinitions)) {
+    if(![definition.name,definition.subtitle,definition.catalogGroup].join(" ").toLowerCase().includes(query)) continue;
+    const group=definition.catalogGroup || "Operations";
+    if(!groups.has(group)) { const details=document.createElement("details"), summary=document.createElement("summary"); summary.textContent=group; details.open=Boolean(query)||group==="Operations"; details.append(summary); list.append(details); groups.set(group,details); }
+    const button=document.createElement("button"); button.className="library-item"; button.dataset.tool=key;
+    button.innerHTML=`<span class="object-icon"><span class="icon-model ${escapeHtml(definition.visual)}"></span></span><span><strong>${escapeHtml(definition.name)}</strong><small>${escapeHtml(definition.subtitle)}</small></span>`;
+    groups.get(group).append(button);
+  }
+  if(!groups.size) list.textContent="No objects match your search.";
+}
 
 function workspaceProfile(tool) {
   const definition = objectDefinitions[tool] || objectDefinitions.physical;
@@ -265,7 +389,8 @@ function interfaceContent(tool) {
     <h4>Recorded evidence</h4><p>${state.events} received events in this session. Export contains the routine events and approvals captured by the execution controls.</p>
     <div class="operations-actions">${operationButton("timeline", "View event timeline")}${operationButton("export", "Export routine evidence")}${operationButton("audit", "Load audit trail")}</div>
     <pre id="workspace-audit">Load the tenant-scoped audit trail to inspect actual server records.</pre>`;
-  return `<div class="operations-workspace">${notice}${content}<p class="operations-error" role="status" id="workspace-error"></p></div>`;
+  const robot=state.interiorNodeId ? nodeById(state.interiorNodeId) : state.interiorDraft;
+  return `<div class="operations-workspace">${notice}${robotModelControl(robot,state.interiorNodeId || "preview")}${content}<p class="operations-error" role="status" id="workspace-error"></p></div>`;
 }
 
 function renderInterfaceTab(tool) {
@@ -286,18 +411,19 @@ function openObjectSubmenu(tool, sourceNode = null) {
   const definition = { ...objectDefinitions[tool], ...(sourceNode || {}) };
   const profile = workspaceProfile(tool);
   state.pendingTool = tool; state.interiorTool = tool; state.previousView = state.mode;
+  state.interiorNodeId=sourceNode?.id || null; state.interiorDraft=structuredClone(definition);
   $("#interior-dive").classList.remove("hidden");
   $("#interior-title").textContent = definition.name;
   $("#interior-type").textContent = profile.role;
-  $("#interior-description").textContent = profile.description;
+  $("#interior-description").textContent = definition.subtitle;
   $("#interior-capacity").textContent = `${definition.capacity} resources`;
   $("#interior-service").textContent = `${definition.service} units`;
   $("#interior-role").textContent = profile.role;
-  $("#interior-place").disabled = !state.editMode || Boolean(sourceNode);
+  $("#interior-place").disabled = !canEditModel() || Boolean(sourceNode);
   $("#interior-place").textContent = sourceNode ? "Already in model" : "Place in model";
   $("#interface-tabs").replaceChildren();
   renderInterfaceTab(tool);
-  if (state.interiorWorld) { state.interiorWorld.setModel({ nodes: [{ ...definition, id: "interior", x: 550, y: 325, z: 0 }], edges: [] }); state.interiorWorld.setSelected("interior"); state.interiorWorld.setCamera({ azimuth: -.62, elevation: .34, zoom: 1.1 }); }
+  if (state.interiorWorld) { state.interiorWorld.setModel({ nodes: [{ ...definition, id: "interior", x: 550, y: 325, z: 0 }], edges: [] }); state.interiorWorld.setSelected("interior"); positionInteriorCamera(definition); }
   if (state.mode !== "3d") changeView("3d");
 }
 
@@ -338,20 +464,24 @@ async function handleOperation(action) {
   }
 }
 
-function addObject(tool) {
-  if (!state.editMode) { showToast("Turn on Edit Mode to add objects."); return; }
-  const definition = objectDefinitions[tool];
+function addObject(tool, preview = null) {
+  if (!canEditModel()) { showToast("Enable Edit Mode and finish active runs before adding objects."); return; }
+  const definition = preview || objectDefinitions[tool];
   if (!definition) return;
-  state.history.push(snapshotModel()); state.future = [];
-  const id = `${tool}-${Date.now()}`;
-  state.model.nodes.push({ id, ...definition, x: 420 + Math.random() * 180, y: 90 + Math.random() * 400, z: 2 });
-  state.selectedId = id; renderModel(); renderInspector(); saveModel(false); showToast(`${definition.name} added to the model.`);
+  if(state.model.nodes.length>=250) return showToast("The model supports at most 250 objects.");
+  const before=snapshotModel(), id="custom-"+crypto.randomUUID();
+  state.model.nodes.push({ ...structuredClone(definition), id, layer:"custom", x:420+(state.model.nodes.length%4)*90, y:750+Math.floor(state.model.nodes.length/4)*35, z:2 });
+  state.selectedId=id; finishEdit(before); showToast(`${definition.name} added. Select + drag to position it; connect with Trail. Routine bindings are unchanged.`);
 }
 
 async function saveModel(show = true) {
-  const saved = await api("/api/model", { method: "POST", body: JSON.stringify(state.model) });
-  state.model = saved.model;
-  if (show) showToast("Model snapshot accepted asynchronously.");
+  if(!state.session?.permissions.editModel) throw new Error("Editor permission is required to save.");
+  const body=JSON.stringify(state.model);
+  const request=state.saveQueue.catch(()=>{}).then(()=>api("/api/model",{method:"POST",body}));
+  state.saveQueue=request;
+  const saved=await request;
+  if(JSON.stringify(state.model)===body) state.model=saved.model;
+  if(show) showToast("Model snapshot saved.");
 }
 
 const exampleRunbookSteps = [
@@ -382,14 +512,14 @@ async function runExampleAction(action) {
 }
 
 async function loadExample(button) {
-  if (state.robotRunning) return showToast("Stop the active routine before loading an example.");
+  if (!canEditModel()) return showToast("Enable Edit Mode and finish active runs before loading an example.");
   if (button) { button.disabled = true; button.setAttribute("aria-busy", "true"); }
   try {
     const example = await api("/api/model/example");
     if (!example || !Array.isArray(example.nodes) || !Array.isArray(example.edges)) throw new Error("The example model payload is incomplete.");
-    if (state.model) state.history.push(snapshotModel());
-    state.future = [];
+    const before=state.model ? snapshotModel() : null;
     state.model = example;
+    rememberEdit(state,before);
     state.selectedId = example.nodes.find((node) => node.workspace === "asset-management" || node.id === "asset-management")?.id || example.nodes[0]?.id || null;
     state.pendingTool = null;
     state.interiorTool = null;
@@ -764,7 +894,8 @@ function initHumanoidLab() {
   const goalInput = h1$("#h1-joule-goal");
   h1$("#h1-joule-run").addEventListener("click", () => runH1Joule(goalInput.value));
   goalInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); runH1Joule(goalInput.value); } });
-  h1LoadPrompts(); h1LoadMap();
+  // the map is fetched by h1RefreshStatus only once the executor has uploaded one (no 404 noise offline)
+  h1LoadPrompts(); h1RenderPlaces(); h1DrawMap();
   // faster refresh in Mission view (live frame + robot marker), slower otherwise
   let tick = 0;
   h1RefreshStatus(); setInterval(() => { tick += 1; if (h1$("#humanoid-lab").classList.contains("mission") || h1.pip || tick % 2 === 0) h1RefreshStatus(); }, 1500);
@@ -785,6 +916,7 @@ function consumeEvent(event) {
   if (event.type === "audit_breach") logLine("Governance", `${event.entityId} flagged for control review`, true);
   if (event.type === "monte_carlo_run") logLine("Monte Carlo", `run ${event.run}/${event.runs}: throughput ${event.result.throughput}`);
   if (event.type === "simulation_complete") {
+    state.simulationRunning=false;
     if (!state.robotRunning) state.meshWorld?.setFlowState({ running: false });
     updateMetrics(event.summary); $("#model-status").textContent = "Experiment complete"; $("#run-simulation").disabled = false;
     logLine("orchestrator", `completed ${event.summary.completed} entities; p95 cycle ${event.summary.p95Cycle}`);
@@ -867,6 +999,8 @@ function consumeEvent(event) {
   if (event.type === "approval_required") logLine("human approval", `${event.stepId}: waiting for an explicit operator decision`, true);
   if (event.type === "approval_resolved") logLine("human approval", `${event.stepId}: ${event.decision} by ${event.approvedBy}`);
   if (event.kind === "robot_routine" && ["job_complete", "job_failed", "job_cancelled"].includes(event.type)) state.robotRunning = false;
+  if(event.kind==="simulation" && ["job_complete","job_failed","job_cancelled"].includes(event.type)) state.simulationRunning=false;
+  syncEditorControls();
   state.executionUI?.event(event);
 }
 
@@ -911,18 +1045,21 @@ async function checkAnalyticsReady() {
 }
 
 async function runSimulation() {
+  if(state.simulationRunning || state.experimentRunning) return showToast("An experiment is already running.");
   if (state.robotRunning) return showToast("Finish or stop the robot routine before running a DES experiment in the same twin.");
   if (!state.model) return;
   setAnalyticsReady(false);
   const button = $("#run-simulation"); button.disabled = true; state.events = 0; $("#event-count").textContent = "0 events"; $("#timeline-fill").style.width = "0%"; $("#model-status").textContent = "Experiment queued";
   const payload = { mode: $("#simulation-mode").value, entities: Number($("#entity-count").value), runs: 5, seed: 42 };
+  state.simulationRunning=true; syncEditorControls();
   state.meshWorld?.setFlowState({ running: true, queues: {} });
   logLine("local DES", `queued ${payload.mode}; ${payload.entities} entities`);
   try {
+    await state.saveQueue;
     const job = await api("/api/simulations", { method: "POST", body: JSON.stringify(payload) });
     logLine("worker", `${job.jobId} accepted as background job`); watchJob(job.jobId, job.events);
   } catch (error) {
-    button.disabled = false; $("#model-status").textContent = "Experiment not started";
+    state.simulationRunning=false; syncEditorControls(); button.disabled = false; $("#model-status").textContent = "Experiment not started";
     state.meshWorld?.setFlowState({ running: false }); showToast(error.message); logLine("local DES", error.message, true);
   }
 }
@@ -1077,14 +1214,15 @@ function renderRobotLab(scenarios) {
 }
 
 async function loadRobotCell() {
-  if (state.robotRunning) return showToast("Stop the active routine before changing its model.");
+  if (!canEditModel()) return showToast("Enable Edit Mode and finish active runs before changing the model.");
   const scenario = state.activeRobotScenario;
   if (!scenario) return showToast("Choose a robot scenario first.");
-  if (state.model) state.history.push(snapshotModel());
-  state.future = [];
+  const before=state.model ? snapshotModel() : null;
   try {
+    await state.saveQueue;
     const result = await api(`/api/robot-scenarios/${scenario.id}/compose`, { method: "POST", body: "{}" });
     state.model = result.model;
+    rememberEdit(state,before);
     state.selectedId = scenario.grafcet.steps[0]?.nodeId || scenario.model.nodes[0]?.id || null;
     renderModel(); renderInspector(); changeView("3d");
     $("#model-status").textContent = `${scenario.domain} local workcell composed with governed operations context`;
@@ -1094,7 +1232,6 @@ async function loadRobotCell() {
     logLine("digital twin", `${summary.platformObjects} operations context objects + ${summary.robotObjects} robot assets connected by ${summary.connections} routes`);
     showToast(`${scenario.name} connected to the SAP-to-physical 3D model.`);
   } catch (error) {
-    state.history.pop();
     logLine("robot lab", `Unified model load failed: ${error.message}`, true);
     showToast(`Could not combine the workcell: ${error.message}`);
   }
@@ -1116,7 +1253,7 @@ function advanceRobotRoutine() {
 }
 
 async function runRobotRoutine() {
-  if (state.robotRunning) return;
+  if (state.robotRunning || state.simulationRunning || state.experimentRunning) return showToast("Finish the current run first.");
   const scenario = state.activeRobotScenario;
   if (!scenario) return;
   const caseContext = { sku: $("#case-sku").value, rfidEpc: $("#case-rfid").value, quantity: Number($("#case-quantity").value), destination: $("#case-destination").value, rackState: $("#case-rack-state").value };
@@ -1158,8 +1295,8 @@ function renderRoutineTab(tab) {
 
 function renderRibbon(tab) {
   const sets = {
-    model: [["select", "↖", "Select"], ["connect", "＋", "BDC Connect"], ["context", "◈", "Operations Context"], ["physical", "▣", "Workcell"], ["approval", "⌑", "Approval"], ["save", "▣", "Save Snapshot"], ["undo", "↶", "Undo"], ["redo", "↷", "Redo"]],
-    simulate: [["select", "↖", "Select"], ["run", "▶", "Run"], ["realtime", "◉", "Real-time"], ["monte", "∿", "Monte Carlo"], ["rewind", "↺", "Reset clock"], ["save", "▣", "Save Snapshot"]],
+    model: [["select", "↖", "Select"], ["trail", "⌁", "Trail"]],
+    simulate: [["run", "▶", "Run"], ["realtime", "◉", "Paced playback"], ["monte", "∿", "Monte Carlo"], ["rewind", "↺", "Reset clock"], ["save", "▣", "Save Snapshot"]],
     integrate: [["connections", "⌘", "Connection Settings"], ["connect", "◈", "SAP BDC Connect"], ["agent", "✦", "Joule"], ["analytics", "▤", "Joule Analytics"]],
     audit: [["approval", "⌑", "Human Approval"], ["evidence", "▤", "Evidence & Audit"], ["save", "▣", "Save Snapshot"]],
     agent: [["agent", "✦", "Joule · Local Mock"], ["trace", "⇄", "Recorded Trace"], ["connections", "⌘", "Connection Settings"]],
@@ -1167,16 +1304,28 @@ function renderRibbon(tab) {
     humanoid: [["humanoidlab", "◇", "Open Digital Twin Robotics"], ["h1train", "∿", "Train Policy"], ["h1deploy", "▶", "Deploy & Stand Up"], ["h1teleop", "↦", "Walk Forward"]]
   };
   $("#ribbon-tools").replaceChildren(...sets[tab].map(([id, glyph, label]) => {
-    const button = document.createElement("button"); button.className = "tool-button"; button.dataset.tool = (id === "select" || Boolean(objectDefinitions[id])) ? id : ""; button.dataset.command = button.dataset.tool ? "" : id; button.innerHTML = `${glyph}<span>${label}</span>`; return button;
+    const button = document.createElement("button"); button.className = "tool-button";
+    if(["select","trail"].includes(id)) button.dataset.editorTool=id;
+    else { button.dataset.tool=Boolean(objectDefinitions[id])?id:""; button.dataset.command=button.dataset.tool?"":id; }
+    button.innerHTML = `${glyph}<span>${label}</span>`; return button;
   }));
+  if(tab==="model") {
+    const controls=document.createElement("div"); controls.className="model-capacity-controls";
+    controls.innerHTML='<span id="selected-resource">Select an object</span><label>Parallel capacity <input aria-label="Selected object capacity" data-capacity-input type="number" min="1" max="32" step="1"></label><button type="button" data-capacity-delta="-1" aria-label="Decrease capacity">−</button><button type="button" data-capacity-delta="1" aria-label="Increase capacity">+</button><small>Items handled at the same time</small>';
+    $("#ribbon-tools").append(controls);
+  }
+  syncEditorControls();
 }
 
 function handleRibbonAction(button) {
+  if(button.disabled) return;
+  if(button.dataset.editorTool) { state.editTool=button.dataset.editorTool; state.trailStart=null; syncEditorControls(); return showToast(state.editTool==="select"?"Select: drag objects on the floor. Double-click opens the workspace.":"Trail: click source, then destination. Esc cancels."); }
+  if(button.dataset.capacityDelta) return changeCapacity(Number(nodeById(state.selectedId)?.capacity)+Number(button.dataset.capacityDelta));
   const tool = button.dataset.tool;
   const command = button.dataset.command;
   if (tool) return tool === "select" ? showToast("Selection mode active.") : openObjectSubmenu(tool);
   if (command === "run" || command === "realtime" || command === "monte") { $("#simulation-mode").value = command === "monte" ? "monte-carlo" : command === "run" ? "fast" : command; return runSimulation(); }
-  if (command === "rewind") { $("#clock-label").textContent = "t = 0.00"; $("#timeline-fill").style.width = "0%"; showToast("Simulation clock reset."); return; }
+  if (command === "rewind") { if(state.robotRunning || state.simulationRunning) return showToast("Finish the active run before resetting the display."); $("#clock-label").textContent = "t = 0.00 s"; $("#timeline-fill").style.width = "0%"; state.meshWorld?.setFlowState({running:false,queues:{},completedNodeIds:[]}); showToast("Playback display reset. Saved results and evidence are unchanged."); return; }
   if (command === "connections" || command === "trace") return handleOperation(command);
 
   if (command === "analytics") { window.location.assign("/analytics.html"); return; }
@@ -1189,7 +1338,7 @@ function handleRibbonAction(button) {
   if (command === "h1train") { $("#humanoid-lab").classList.remove("hidden"); document.querySelector("#humanoid-lab").scrollIntoView({ behavior: "smooth", block: "start" }); return runH1Train(); }
   if (command === "h1deploy") { $("#humanoid-lab").classList.remove("hidden"); document.querySelector("#humanoid-lab").scrollIntoView({ behavior: "smooth", block: "start" }); return runH1Deploy(); }
   if (command === "h1teleop") { $("#humanoid-lab").classList.remove("hidden"); document.querySelector("#humanoid-lab").scrollIntoView({ behavior: "smooth", block: "start" }); return runH1Teleop({ vx: 0.6, vy: 0, yaw: 0, durationMs: 4000 }); }
-  if (command === "save") return saveModel(true);
+  if (command === "save") return saveModel(true).catch(error=>showToast(error.message));
   if (command === "undo") return undo();
   if (command === "redo") return redo();
 }
@@ -1198,7 +1347,7 @@ function changeView(view) {
   state.mode = view;
   $$("[data-view]").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
   $("#model-canvas").classList.toggle("hidden", view !== "2d"); $("#scene-3d").classList.toggle("hidden", view !== "3d");
-  $("#stage-hint-text").textContent = view === "2d" ? "SAP business context above · physical execution below · drag to rearrange" : state.model?.layout === "unified-campus" ? "Governed context → local mock plan → simulated physical routine → evidence" : "Rendered local workcells · click any object to open its operations workspace";
+  syncEditorControls();
 }
 
 function attachOrbitControls() {
@@ -1206,14 +1355,17 @@ function attachOrbitControls() {
 }
 
 function undo() {
-  if (!state.history.length) return showToast("Nothing to undo yet.");
-  state.future.push(snapshotModel()); state.model = state.history.pop(); renderModel(); renderInspector(); saveModel(false); showToast("Undo applied.");
+  if(!canEditModel()) return showToast("Finish active runs and enable Edit Mode before Undo.");
+  if(!travelHistory(state,"undo")) return showToast("Nothing to undo yet.");
+  restoreHistoryView(); showToast("Undo applied.");
 }
 
 function redo() {
-  if (!state.future.length) return showToast("Nothing to redo yet.");
-  state.history.push(snapshotModel()); state.model = state.future.pop(); renderModel(); renderInspector(); saveModel(false); showToast("Redo applied.");
+  if(!canEditModel()) return showToast("Finish active runs and enable Edit Mode before Redo.");
+  if(!travelHistory(state,"redo")) return showToast("Nothing to redo yet.");
+  restoreHistoryView(); showToast("Redo applied.");
 }
+function restoreHistoryView() { state.trailStart=null; if(state.model.activeScenarioId) selectRobotScenario(state.model.activeScenarioId); renderModel(); renderInspector(); if(state.interiorNodeId && !$("#interior-dive").classList.contains("hidden")) refreshInteriorRobot(); persistEdit(); }
 
 async function boot() {
   state.session = await api("/api/session");
@@ -1222,11 +1374,17 @@ async function boot() {
   $("#edit-toggle").classList.toggle("active", state.editMode);
   $("#edit-toggle").innerHTML = `<span></span> ${state.editMode ? "EDIT MODE" : "VIEW MODE"}`;
   state.model = await api("/api/model");
-  state.executionUI = createExecutionUI({ api, getModel: () => state.model, getWorld: () => state.meshWorld, getScenario: () => state.activeRobotScenario, run: runRobotRoutine, selectScenario: selectRobotScenario, inspectNode: node => openObjectSubmenu(toolForNode(node), node), canApprove: state.session.permissions.approve });
-  state.meshWorld = createMeshWorld($("#webgl-world"), { onFrame: (frame) => state.executionUI.frame(frame), onSelect: (id) => { const node = nodeById(id); state.selectedId = id; renderModel(); renderInspector(); if (node) openObjectSubmenu(toolForNode(node), node); } });
+  state.executionUI = createExecutionUI({ api, getModel: () => state.model, getWorld: () => state.meshWorld, getScenario: () => state.activeRobotScenario, run: runRobotRoutine, selectScenario: selectRobotScenario, selectNode: selectObject, dragNode: (id,event)=>state.meshWorld?.beginNodeDrag(id,event), inspectNode: node => node && openObjectSubmenu(toolForNode(node), node), canApprove: state.session.permissions.approve });
+  state.meshWorld = createMeshWorld($("#webgl-world"), {
+    onFrame: frame => state.executionUI.frame(frame), getTool:()=>state.editTool, canMove:()=>canEditModel() && state.editTool==="select",
+    onSelect:selectObject, onInspect:id=>openObjectSubmenu(toolForNode(nodeById(id)),nodeById(id)),
+    onMoveStart:beginMove, onMove:(id,point)=>{moveObject(state.model,id,point.x,point.y);state.meshWorld.setModel(state.model);},
+    onMoveEnd:(id,cancelled)=>endMove(cancelled)
+  });
   state.interiorWorld = createMeshWorld($("#interior-canvas"), { deepDive: true });
   renderModel(); renderInspector();
   renderRobotLab(await api("/api/robot-scenarios"));
+  objectDefinitions=buildObjectCatalog(objectDefinitions,state.robotScenarios); renderPalette();
   renderRibbon("model"); attachOrbitControls();
   $("#run-simulation").addEventListener("click", runSimulation);
   $("#run-agent-task").addEventListener("click", runAgentTask);
@@ -1280,26 +1438,35 @@ async function boot() {
   $("#submenu-inspect").addEventListener("click", () => { $(".inspector-panel").scrollIntoView({ behavior: "smooth", block: "nearest" }); showToast("Inspector opened while the deep-dive scene remains active."); });
   $("#interior-back").addEventListener("click", () => { $("#interior-dive").classList.add("hidden"); changeView(state.previousView || "2d"); });
   $("#interior-close").addEventListener("click", () => { $("#interior-dive").classList.add("hidden"); changeView(state.previousView || "2d"); });
-  $("#interior-place").addEventListener("click", () => { if (state.interiorTool) { addObject(state.interiorTool); $("#interior-place").textContent = "Place another"; showToast("Mesh placed on the shared model plane."); } });
+  $("#interior-place").addEventListener("click", () => { if (state.interiorTool && !state.interiorNodeId) { addObject(state.interiorTool,state.interiorDraft); $("#interior-place").textContent = "Place another"; } });
   document.addEventListener("click", (event) => {
     const action = event.target.closest("[data-operation]")?.dataset.operation;
     if (action) handleOperation(action).catch((error) => { showToast(error.message); if ($("#workspace-error")) $("#workspace-error").textContent = error.message; });
   });
-  $("#edit-toggle").addEventListener("click", () => { if (!state.session.permissions.editModel) return showToast("Your role is view-only."); state.editMode = !state.editMode; $("#edit-toggle").classList.toggle("active", state.editMode); $("#edit-toggle").innerHTML = `<span></span> ${state.editMode ? "EDIT MODE" : "VIEW MODE"}`; renderInspector(); showToast(state.editMode ? "Edition mode enabled." : "View mode enabled; model structure is locked."); });
-  $$(".library-item[data-tool]").forEach((button) => button.addEventListener("click", () => openObjectSubmenu(button.dataset.tool)));
+  $("#edit-toggle").addEventListener("click", () => { if (!state.session.permissions.editModel) return showToast("Your role is view-only."); if(state.dragId) cancelDrag(); state.trailStart=null; state.editMode = !state.editMode; $("#edit-toggle").classList.toggle("active", state.editMode); $("#edit-toggle").innerHTML = `<span></span> ${state.editMode ? "EDIT MODE" : "VIEW MODE"}`; renderInspector(); showToast(state.editMode ? "Edition mode enabled." : "View mode enabled; model structure is locked."); });
+  $("#library-list").addEventListener("click",event=>{const tool=event.target.closest("[data-tool]")?.dataset.tool;if(tool) openObjectSubmenu(tool);});
+  $("#editor-history").addEventListener("click",event=>{const button=event.target.closest("[data-command]");if(button&&!button.disabled) handleRibbonAction(button);});
+  document.addEventListener("change",event=>{if(event.target.matches("[data-capacity-input]")) changeCapacity(event.target.value); if(event.target.matches("[data-robot-model]")) changeRobotRepresentation(event.target.dataset.robotModel,event.target.value);});
+  document.addEventListener("keydown",event=>{
+    if(event.key==="Escape") { state.trailStart=null; if(state.dragId) cancelDrag(); syncEditorControls(); }
+    if(!(event.ctrlKey||event.metaKey) || event.target.closest("input,textarea,select,[contenteditable=true]")) return;
+    if(event.key.toLowerCase()==="z") { event.preventDefault(); event.shiftKey?redo():undo(); }
+    if(event.key.toLowerCase()==="y") { event.preventDefault(); redo(); }
+    if(event.key.toLowerCase()==="s") { event.preventDefault(); saveModel(true).catch(error=>showToast(error.message)); }
+  });
   $$(".top-actions [data-command]").forEach((button) => button.addEventListener("click", async () => {
     const command = button.dataset.command;
     if (command === "save") return saveModel(true);
     if (command === "undo") return undo(); if (command === "redo") return redo();
     if (command === "load") return loadExample(button);
-    if (command === "new") { state.history.push(snapshotModel()); state.future = []; state.model = { id: `model-${Date.now()}`, name: "Untitled SAP Embodied AI Scenario", version: "0.5.0-embodied-ai", nodes: [], edges: [] }; state.selectedId = null; renderModel(); renderInspector(); await saveModel(false); return showToast("New editable model created."); }
-    if (command === "open") { state.model = await api("/api/model"); state.selectedId = null; renderModel(); renderInspector(); return showToast("Current model snapshot opened."); }
+    if (command === "new") { if(!canEditModel()) return showToast("Enable Edit Mode and finish active runs first."); const before=snapshotModel(); state.model = { id: `model-${Date.now()}`, name: "Untitled SAP Embodied AI Scenario", version: before.version, nodes: [], edges: [] }; state.selectedId = null; state.trailStart=null; finishEdit(before); return showToast("New editable model created. Undo restores the previous model."); }
+    if (command === "open") { if(!canEditModel()) return showToast("Enable Edit Mode and finish active runs first."); try { await state.saveQueue; const before=snapshotModel(); state.model = await api("/api/model"); rememberEdit(state,before); state.selectedId=null; state.trailStart=null; if(state.model.activeScenarioId) selectRobotScenario(state.model.activeScenarioId); renderModel(); renderInspector(); return showToast("Current model snapshot opened."); } catch(error) { showToast(error.message); } }
     if (command === "getting-started") { $("#guide-panel").classList.remove("hidden"); return; }
     if (command === "intro") { openIntro(); return; }
   }));
   $$("[data-ribbon]").forEach((button) => button.addEventListener("click", () => { $$("[data-ribbon]").forEach((item) => item.classList.toggle("active", item === button)); renderRibbon(button.dataset.ribbon); showToast(`${button.textContent} ribbon selected.`); }));
   $$("[data-zoom]").forEach((button) => button.addEventListener("click", () => { const action = button.dataset.zoom; if (state.mode === "3d") { if (action === "fit") state.meshWorld?.fit?.(); else state.meshWorld?.setCamera({ zoom: action === "in" ? 1.15 : 1 / 1.15 }); return; } state.zoom = action === "in" ? Math.min(1.3, state.zoom + .1) : action === "out" ? Math.max(.7, state.zoom - .1) : 1; $("#zoom-label").textContent = `${Math.round(state.zoom * 100)}%`; $("#model-canvas").style.transform = `scale(${state.zoom})`; }));
-  $("#palette-search").addEventListener("input", (event) => $$(".library-item").forEach((item) => item.classList.toggle("hidden", !item.textContent.toLowerCase().includes(event.target.value.toLowerCase()))));
+  $("#palette-search").addEventListener("input",renderPalette);
   const deepLink = new URLSearchParams(location.search);
   changeView(deepLink.get("view") === "2d" ? "2d" : "3d");
   initHumanoidLab();
@@ -1312,7 +1479,12 @@ async function boot() {
   } catch (error) { $("#operations-scope").textContent = `Scope status unavailable: ${error.message}`; }
   try { await initConnectionsUI({ api }); }
   catch (error) { $("#connections-settings").textContent = `Connection settings unavailable: ${error.message}`; }
-  try { await initExperimentsUI({ api, getModel: () => state.model }); }
+  try { state.experimentsUI = initExperimentsUI({
+    api:async(path,options)=>{if(path==="/api/experiment-template") await state.saveQueue;return api(path,options);},
+    getModel:()=>state.model,
+    beforeRun:async()=>{if(state.robotRunning||state.simulationRunning) throw new Error("Finish the active twin run first.");await state.saveQueue;},
+    onRunningChange:running=>{state.experimentRunning=running;syncEditorControls();}
+  }); }
   catch (error) { $("#industrial-experiments").textContent = `Industrial experiments unavailable: ${error.message}`; }
   state.jouleChat = initJouleChat({ api, getScenario: () => state.activeRobotScenario, runRecipe: async workflow => {
     if (state.robotRunning) throw new Error("Finish or stop the current routine.");

@@ -81,6 +81,12 @@ export function meshFor(shape) {
       triangle(data, [0, 0, 0], [.5 * Math.cos(b), 0, .5 * Math.sin(b)], [.5 * Math.cos(a), 0, .5 * Math.sin(a)]);
     }
   } else if (shape === 'jouleStar') data = jouleStarMesh();
+  else if (shape === 'humanoidChest') data = loft([
+    [-.5, .72, .63], [-.35, .98, .76], [.27, 1, 1], [.43, .84, .96], [.5, .64, .74]
+  ].map(([y, depth, width]) => rectangleRing(y, .5, .12).map(([x, h, z]) => [x * depth, h, z * width])));
+  else if (shape === 'humanoidFoot') data = loft([
+    [-.5, 1, 1, 0], [-.26, 1, 1, 0], [.25, .83, .86, -.04], [.5, .58, .66, -.11]
+  ].map(([y, length, width, offset]) => rectangleRing(y, .5, .1).map(([x, h, z]) => [x * length + offset, h, z * width])));
   else if (shape === 'box') data = loft([rectangleRing(-.5, .5, 0), rectangleRing(.5, .5, 0)]);
   else if (shape === 'bevel') data = loft([rectangleRing(-.5, .455, .06), rectangleRing(-.42), rectangleRing(.42), rectangleRing(.5, .455, .06)]);
   else if (shape === 'chassis') data = loft([rectangleRing(-.5, .4, .12), rectangleRing(-.32, .5, .14), rectangleRing(.18, .5, .14), rectangleRing(.5, .41, .12)]);
@@ -160,7 +166,7 @@ export function amrParts(p, loaded = true) {
   return out;
 }
 
-export function isArticulated(visual) { return ['cobotCell', 'mobileManipulator', 'robot', 'conveyor', 'torqueStation', 'inspectionCell', 'assemblyFixture', 'sensorMast', 'quadruped', 'unitree'].includes(visual); }
+export function isArticulated(visual) { return ['cobotCell', 'mobileManipulator', 'robot', 'conveyor', 'torqueStation', 'inspectionCell', 'assemblyFixture', 'sensorMast', 'quadruped', 'unitree', 'unitreeHumanoid'].includes(visual); }
 export const JOULE_CONCEPT_NOTICE = 'Joule-inspired 3D concept; not an official or certified SAP brand asset.';
 export const UNITREE_CONCEPT_NOTICE = 'Generic Unitree-style inspection quadruped; no specific model or payload capability asserted.';
 export function jouleParts() {
@@ -211,13 +217,122 @@ function unitreeLegs(progress) {
   return out;
 }
 export function unitreeParts(progress = 0) { return [...unitreeBody(), ...unitreeLegs(progress)]; }
+export const UNITREE_HUMANOID_CONCEPT_NOTICE = 'H1-inspired humanoid concept; authored polygonal mesh, not official Unitree CAD. Grounded, non-physical motion illustration; no vendor capability or simulation accuracy asserted.';
+const humanoidPalette = Object.freeze({ white: '#edf1f2', trim: '#c5ced3', graphite: '#242d35', dark: '#10171d', metal: '#83949f', glass: '#70acc2', accent: '#91d6de' });
+// Renderer-ignored names identify real geometry and joints for mesh-only tests.
+const humanoidPart = (name, ...args) => ({ ...part(...args), name });
+function humanoidJoint(name, at, diameter, width, side) {
+  const p = humanoidPalette, face = [at[0], at[1], at[2] + side * (width / 2 + .006)];
+  return [
+    humanoidPart(name, 'joint', at, [diameter, width, diameter], p.graphite, 0, 0, MATERIAL.metal, Math.PI / 2),
+    humanoidPart(name + '-rim', 'ring', face, [diameter * .75, .012, diameter * .75], p.trim, 0, 0, MATERIAL.metal, Math.PI / 2),
+    humanoidPart(name + '-axle', 'cylinder', face, [diameter * .3, .015, diameter * .3], p.metal, 0, 0, MATERIAL.metal, Math.PI / 2)
+  ];
+}
+function humanoidLimb(name, a, b, width) {
+  const core = { ...beam(a, b, width, humanoidPalette.graphite, 'link'), name };
+  return [core, { ...core, name: name + '-armor', size: [width * 1.3, core.size[1] * .72, width * 1.18], color: humanoidPalette.white }];
+}
+function unitreeHumanoidBody() {
+  const p = humanoidPalette, out = [];
+  const add = (name, shape, at, size, color, material = MATERIAL.metal) => out.push(humanoidPart(name, shape, at, size, color, 0, 0, material));
+  // +X faces forward, Y is up, left/right occupy opposite Z half-spaces.
+  // Two flat soles, not a display plinth: their bottom vertices are exactly Y=0.
+  for (const side of [-1, 1]) {
+    const label = side < 0 ? 'right' : 'left', z = side * .147;
+    add(label + '-sole', 'bevel', [.055, .019, z], [.35, .038, .156], p.dark, MATERIAL.solid);
+    add(label + '-foot', 'humanoidFoot', [.055, .067, z], [.34, .058, .15], p.trim);
+    add(label + '-toe-insert', 'bevel', [.177, .061, z], [.072, .027, .13], p.graphite);
+    const hip = [0, 1, z], ankle = [0, .14, z];
+    const knee = [Math.sqrt(.45 ** 2 - .43 ** 2), .57, z];
+    out.push(...humanoidLimb(label + '-thigh', hip, knee, .112), ...humanoidLimb(label + '-shin', knee, ankle, .079));
+    out.push(...humanoidJoint(label + '-hip', hip, .18, .12, side));
+    out.push(...humanoidJoint(label + '-knee', knee, .136, .111, side));
+    out.push(...humanoidJoint(label + '-ankle', ankle, .106, .097, side));
+    // Exposed parallel actuator rods and rear calf service spine.
+    out.push({ ...beam([knee[0] - .045, knee[1] - .055, z], [-.045, .2, z], .022, p.metal), name: label + '-calf-actuator' });
+  }
+  add('pelvis', 'chassis', [0, 1.025, 0], [.24, .15, .34], p.graphite);
+  add('pelvis-front', 'bevel', [.119, 1.046, 0], [.029, .078, .2], p.trim);
+  add('waist-motor', 'cylinder', [0, 1.136, 0], [.205, .1, .205], p.dark);
+  add('waist-collar', 'ring', [0, 1.162, 0], [.214, .027, .214], p.metal);
+  add('thorax-frame', 'humanoidChest', [-.025, 1.359, 0], [.29, .394, .407], p.graphite);
+  add('chest-shell', 'humanoidChest', [.033, 1.367, 0], [.267, .405, .429], p.white);
+  out[out.length - 1].concept = UNITREE_HUMANOID_CONCEPT_NOTICE;
+  add('sternum-insert', 'bevel', [.171, 1.4, 0], [.018, .17, .103], p.graphite);
+  out.push(humanoidPart('chest-status', 'bevel', [.182, 1.445, 0], [.008, .018, .064], p.accent, 0, .22, MATERIAL.glow));
+  add('abdomen-panel', 'chassis', [.114, 1.227, 0], [.039, .075, .201], p.trim);
+  add('backpack', 'chassis', [-.169, 1.363, 0], [.112, .294, .267], p.graphite);
+  add('backpack-lid', 'bevel', [-.229, 1.363, 0], [.023, .236, .209], p.trim);
+  for (let i = 0; i < 5; i++) add('back-vent-' + i, 'bevel', [-.242, 1.298 + i * .028, 0], [.01, .012, .146], p.dark);
+  for (const side of [-1, 1]) {
+    const label = side < 0 ? 'right' : 'left';
+    add(label + '-clavicle', 'bevel', [0, 1.478, side * .221], [.139, .114, .13], p.trim);
+    out.push(...humanoidJoint(label + '-shoulder', [0, 1.475, side * .29], .173, .135, side));
+    for (const y of [1.31, 1.49]) out.push(humanoidPart(label + '-chest-fastener-' + y, 'cylinder', [.162, y, side * .13], [.018, .009, .018], p.metal, Math.PI / 2, 0, MATERIAL.metal, Math.PI / 2));
+  }
+  add('neck-stem', 'cylinder', [0, 1.606, 0], [.077, .116, .077], p.graphite);
+  add('neck-bearing', 'ring', [0, 1.64, 0], [.1, .027, .1], p.metal);
+  return out;
+}
+function unitreeHumanoidArticulation(progress) {
+  const p = humanoidPalette, t = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
+  // One-shot sensing gesture. Legs/soles remain planted; this is not a gait,
+  // balance solver, transport animation, or robot-control trajectory.
+  // Hold at renderer envelope samples .34/.65, then return smoothly to rest.
+  const u = t < .34 ? t / .34 : t <= .65 ? 1 : (1 - t) / .35;
+  const gesture = u * u * (3 - 2 * u);
+  const head = [
+    humanoidPart('head-shell', 'chassis', [0, 1.723, 0], [.177, .15, .188], p.white),
+    humanoidPart('sensor-visor', 'bevel', [.087, 1.725, 0], [.039, .079, .165], p.dark),
+    humanoidPart('lidar-base', 'cylinder', [0, 1.81, 0], [.117, .027, .117], p.graphite),
+    humanoidPart('lidar-window', 'cylinder', [0, 1.837, 0], [.105, .031, .105], p.glass, 0, .12, MATERIAL.glass),
+    humanoidPart('lidar-cap', 'cylinder', [0, 1.859, 0], [.12, .015, .12], p.graphite)
+  ];
+  for (const side of [-1, 1]) {
+    head.push(humanoidPart('camera-rim-' + side, 'cylinder', [.111, 1.731, side * .045], [.049, .012, .049], p.metal, Math.PI / 2, 0, MATERIAL.metal, Math.PI / 2));
+    head.push(humanoidPart('camera-lens-' + side, 'cylinder', [.119, 1.731, side * .045], [.033, .009, .033], p.glass, Math.PI / 2, .16, MATERIAL.glass, Math.PI / 2));
+  }
+  const out = transformParts(head, [0, 0, 0], .42 * gesture);
+  for (const side of [-1, 1]) {
+    const label = side < 0 ? 'right' : 'left', z = side * .29;
+    const upperAngle = .08 + (side > 0 ? .62 : .12) * gesture;
+    const lowerAngle = upperAngle + .24 + (side > 0 ? .5 : .25) * gesture;
+    const shoulder = [0, 1.475, z];
+    const elbow = [shoulder[0] + .275 * Math.sin(upperAngle), shoulder[1] - .275 * Math.cos(upperAngle), z];
+    const wrist = [elbow[0] + .255 * Math.sin(lowerAngle), elbow[1] - .255 * Math.cos(lowerAngle), z];
+    out.push(...humanoidLimb(label + '-upper-arm', shoulder, elbow, .081));
+    out.push(...humanoidLimb(label + '-forearm', elbow, wrist, .069));
+    out.push(...humanoidJoint(label + '-elbow', elbow, .112, .092, side));
+    out.push(...humanoidJoint(label + '-wrist', wrist, .073, .075, side));
+    const handAxes = axesFor(beam(elbow, wrist, 1, p.graphite));
+    const hand = (suffix, at, size, color) => {
+      const position = wrist.map((v, row) => v + at.reduce((sum, value, col) => sum + value * handAxes[col][row], 0));
+      out.push({ ...humanoidPart(label + '-' + suffix, 'bevel', position, size, color, 0, 0, MATERIAL.metal), axes: handAxes });
+    };
+    hand('palm', [0, .055, 0], [.064, .089, .083], p.graphite);
+    hand('hand-plate', [.034, .051, 0], [.016, .064, .07], p.white);
+    for (let finger = 0; finger < 4; finger++) {
+      const length = finger === 0 || finger === 3 ? .041 : .051, fz = (finger - 1.5) * .02;
+      hand('finger-' + finger, [0, .097 + length / 2, fz], [.025, length, .015], p.trim);
+      hand('fingertip-' + finger, [.008, .097 + length + .013, fz], [.028, .026, .014], p.graphite);
+    }
+    hand('thumb', [.047, .073, side * .024], [.035, .049, .023], p.trim);
+    hand('thumb-tip', [.051, .105, side * .024], [.027, .025, .021], p.graphite);
+  }
+  return out;
+}
+// Complete local-space assembly for previews; same split used by webgl-world.
+export function unitreeHumanoidParts(progress = 0) { return [...unitreeHumanoidBody(), ...unitreeHumanoidArticulation(progress)]; }
 // Data flows do not imply physical transport. Only an active quadruped walks.
 export function flowCarrierParts(visual, progress = 0) {
   if (visual === 'unitree' || visual === 'quadruped') return unitreeParts(progress);
+  if (visual === 'unitreeHumanoid') return unitreeHumanoidParts(progress);
   return [part('bevel', [0, .22, 0], [.15, .15, .15], '#a7eee9', Math.PI / 4, .6, MATERIAL.glow)];
 }
 // Explicit one-shot keyframe choreography; never driven by a wall-clock sine wave.
 export function articulationParts(visual, p, progress = 0) {
+  if (visual === 'unitreeHumanoid') return unitreeHumanoidArticulation(progress);
   const { out, add, box, rod } = builder(p), t = Math.max(0, Math.min(1, progress));
   if (['cobotCell', 'mobileManipulator', 'robot'].includes(visual)) {
     const mobile = visual === 'mobileManipulator', baseY = mobile ? .66 : .71;
@@ -265,6 +380,7 @@ export function articulationParts(visual, p, progress = 0) {
 }
 
 export function objectParts(visual, p) {
+  if (visual === 'unitreeHumanoid') return unitreeHumanoidBody();
   const { out, add, box, rod, pad, screen, beacon } = builder(p);
   if (visual === 'joule') return jouleParts();
   if (visual === 'unitree' || visual === 'quadruped') return unitreeBody();

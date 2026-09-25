@@ -140,6 +140,8 @@ function harness(t, overrides = {}) {
   t.mock.method(URL, 'revokeObjectURL', () => {});
   let active = 'autonomous-inspection', record;
   const controller = initJouleChat({ getScenario: () => active, api: async (path, options) => {
+    // Connection probe on mount (AI Core status); not a planner request, so it is not counted.
+    if (path === '/api/joule/descriptor') return { status: 'NOT_CONNECTED' };
     calls.push({ path, options });
     if (path === '/api/joule/chat') { record = { id: 'recipe_1', recipe: buildRecipe(JSON.parse(options.body)), bat: exportBat() }; return overrides.job || job; }
     return overrides.record || record;

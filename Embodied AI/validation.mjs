@@ -26,7 +26,7 @@ export function validateModelInput(body) {
     return {
       ...node, id, name: text(node.name, `nodes[${index}].name`, 100), subtitle: text(node.subtitle || "Operational object", `nodes[${index}].subtitle`, 160),
       kind: oneOf(node.kind, `nodes[${index}].kind`, ["source", "bdc", "data", "consume", "audit", "agent"]),
-      visual: oneOf(node.visual, `nodes[${index}].visual`, ["warehouse", "tower", "reactor", "silo", "crate", "pavilion", "robot", "joule", "unitree", "gate", "posTerminal", "retailShelf", "rack", "mobileManipulator", "safetyZone", "sensorMast", "amr", "cobotCell", "conveyor", "inspectionCell", "loadingDock", "partsFeeder", "assemblyFixture", "torqueStation", "robotDock", "quadruped", "processMachine"]),
+      visual: oneOf(node.visual, `nodes[${index}].visual`, ["warehouse", "tower", "reactor", "silo", "crate", "pavilion", "robot", "joule", "unitree", "unitreeHumanoid", "gate", "posTerminal", "retailShelf", "rack", "mobileManipulator", "safetyZone", "sensorMast", "amr", "cobotCell", "conveyor", "inspectionCell", "loadingDock", "partsFeeder", "assemblyFixture", "torqueStation", "robotDock", "quadruped", "processMachine"]),
       x: number(node.x, `nodes[${index}].x`, -1000, 2000), y: number(node.y, `nodes[${index}].y`, -1000, 2000), z: number(node.z ?? 0, `nodes[${index}].z`, 0, 20),
       capacity: Math.floor(number(node.capacity, `nodes[${index}].capacity`, 1, 100)), service: number(node.service, `nodes[${index}].service`, 0.01, 1000),
       color: /^#[0-9a-fA-F]{6}$/.test(node.color || "") ? node.color : "#40566a",

@@ -1,4 +1,5 @@
 import { MATERIAL, meshFor, part, axesFor, beam, transformParts, objectParts, articulationParts, isArticulated, payloadParts, amrParts } from './mesh-assets.js';
+import { screenToGround } from './editor-core.js';
 
 const TAU = Math.PI * 2;
 
@@ -204,7 +205,7 @@ function makeProgram(gl) {
  * Choreography is illustrative; it is not physics, path planning or robot control.
  */
 export function createMeshWorld(canvas, options = {}) {
-  const noop = { setModel() {}, setSelected() {}, setCamera() {}, setFlowState() {}, focusNode() { return false; }, fit() {}, dispose() {} };
+  const noop = { setModel() {}, setSelected() {}, setCamera() {}, setFlowState() {}, beginNodeDrag() { return false; }, focusNode() { return false; }, fit() {}, dispose() {} };
   const gl = canvas?.getContext?.('webgl', { antialias: true, alpha: true, premultipliedAlpha: false });
   if (!gl) return noop;
   const deepDive = Boolean(options.deepDive), listeners = [], staticCache = new Map();
@@ -442,15 +443,36 @@ export function createMeshWorld(canvas, options = {}) {
     state.camera.distance = clamp(state.camera.distance * Math.exp(clamp(delta * .001, -.5, .5)), 1.5, MAX_DISTANCE);
   }, { passive: false });
   const previousTouchAction = canvas.style.touchAction; canvas.style.touchAction = 'none';
+  function ground(event) {
+    const rect=canvas.getBoundingClientRect();
+    return screenToGround({x:event.clientX-rect.left,y:event.clientY-rect.top,width:rect.width,height:rect.height,eye:cameraEye(),target:state.camera.target,fov:FOV});
+  }
+  function beginNodeDrag(id,event) {
+    if (pointer || deepDive || event.button !== 0 || event.shiftKey || !options.canMove?.()) return false;
+    const node=state.model.nodes.find(n=>n.id===id), anchor=ground(event);
+    if (!node || !anchor) return false;
+    event.preventDefault(); canvas.setPointerCapture?.(event.pointerId);
+    pointer={id:event.pointerId,nodeId:id,x:event.clientX,y:event.clientY,moved:0,anchor,origin:{x:node.x,y:node.y}};
+    state.selected=id; options.onMoveStart?.(id); return true;
+  }
   listen(canvas, 'contextmenu', (event) => event.preventDefault());
   listen(canvas, 'pointerdown', (event) => {
     if (pointer || event.button > 2) return;
+    const id = event.button === 0 && !event.shiftKey ? pick(event) : null;
+    if (id && beginNodeDrag(id,event)) return;
     event.preventDefault(); canvas.setPointerCapture?.(event.pointerId);
     pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: 0, pan: event.shiftKey || event.button === 1 || event.button === 2, yaw: state.camera.yaw, pitch: state.camera.pitch, target: [...state.camera.target] };
   });
   listen(canvas, 'pointermove', (event) => {
     if (!pointer || pointer.id !== event.pointerId) return;
     const dx = event.clientX - pointer.x, dy = event.clientY - pointer.y; pointer.moved = Math.max(pointer.moved, Math.hypot(dx, dy));
+    if (pointer.nodeId) {
+      if (!options.canMove?.()) return cancelPointer();
+      const point=ground(event);
+      if (point && pointer.moved >= 4) options.onMove?.(pointer.nodeId,{x:pointer.origin.x+(point[0]-pointer.anchor[0])*105,y:pointer.origin.y+(point[2]-pointer.anchor[2])*62});
+      return;
+    }
+    if (options.getTool?.() === "trail" && !pointer.pan) return;
     if (pointer.pan) {
       const scale = 2 * state.camera.distance * Math.tan(FOV / 2) / state.cssHeight, yaw = pointer.yaw;
       state.camera.target = [pointer.target[0] - dx * Math.cos(yaw) * scale - dy * Math.sin(yaw) * scale, pointer.target[1], pointer.target[2] + dx * Math.sin(yaw) * scale - dy * Math.cos(yaw) * scale];
@@ -459,7 +481,6 @@ export function createMeshWorld(canvas, options = {}) {
     }
   });
   function pick(event) {
-    if (typeof options.onSelect !== 'function') return;
     if (state.dirty) rebuild(); const { pv } = projectionView(), rect = canvas.getBoundingClientRect();
     const x = (event.clientX - rect.left) * state.cssWidth / Math.max(1, rect.width), y = (event.clientY - rect.top) * state.cssHeight / Math.max(1, rect.height);
     let winner = null, best = Infinity;
@@ -471,16 +492,19 @@ export function createMeshWorld(canvas, options = {}) {
       const center = project(centerOf(entry.bounds), pv);
       if (x >= left - 5 && x <= right + 5 && y >= top - 5 && y <= bottom + 5 && center.depth < best) { winner = entry.node.id; best = center.depth; }
     }
-    if (winner != null) options.onSelect(winner);
+    return winner;
   }
   listen(canvas, 'pointerup', (event) => {
     if (!pointer || pointer.id !== event.pointerId) return;
-    const click = !pointer.pan && pointer.moved < 6; pointer = null;
+    const finished=pointer, click = !pointer.pan && pointer.moved < 6; pointer = null;
     if (canvas.hasPointerCapture?.(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
-    if (click) pick(event);
+    if (finished.nodeId) options.onMoveEnd?.(finished.nodeId,false);
+    else if (click) { const id=pick(event); if (id != null) options.onSelect?.(id); }
   });
-  const cancelPointer = () => { pointer = null; };
+  const cancelPointer = () => { const previous=pointer; pointer = null; if(previous?.nodeId) options.onMoveEnd?.(previous.nodeId,true); };
   listen(canvas, 'pointercancel', cancelPointer); listen(canvas, 'lostpointercapture', cancelPointer);
+  listen(canvas,'dblclick',event=>{const id=pick(event); if(id!=null) options.onInspect?.(id);});
+  listen(window,'keydown',event=>{if(event.key==="Escape") cancelPointer();});
   listen(window, 'resize', resize);
   if (typeof ResizeObserver !== 'undefined') { observer = new ResizeObserver(resize); observer.observe(canvas); }
   listen(canvas, 'webglcontextlost', (event) => { event.preventDefault(); state.lost = true; cancelAnimationFrame(state.raf); pointer = null; });
@@ -504,6 +528,6 @@ export function createMeshWorld(canvas, options = {}) {
       state.dirty = true;
     },
     setSelected(id) { state.selected = id; },
-    setCamera, setFlowState, focusNode, fit, dispose
+    setCamera, setFlowState, focusNode, fit, dispose, beginNodeDrag
   };
 }

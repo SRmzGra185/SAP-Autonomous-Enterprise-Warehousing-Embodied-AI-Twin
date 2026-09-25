@@ -3,6 +3,7 @@ import { routineKpis } from "./industrial-kpis.mjs";
 import { governanceFor } from "./routine-governance.mjs";
 import { defaultCaseContext } from "./routine-context.mjs";
 import { proposalForStep } from "./resource-selection.mjs";
+import { isUnitree } from "../public/robot-models.js";
 const VERSION = MODEL_VERSION;
 
 function node(id, kind, visual, name, subtitle, x, y, z, capacity, service, color, deviceClass, protocols) {
@@ -277,6 +278,8 @@ export function composeRobotTwin(currentModel, foundationModel, scenario) {
   const minX = Math.min(...sourceXs), maxX = Math.max(...sourceXs), minY = Math.min(...sourceYs), maxY = Math.max(...sourceYs);
   const robotNodes = scenario.model.nodes.map((entry, index) => ({
     ...entry,
+    // Re-loading the same workcell retains its chosen visual, not new hardware permissions.
+    visual: isUnitree(entry) && isUnitree(currentById.get(entry.id)) ? currentById.get(entry.id).visual : entry.visual,
     x: scenario.model.nodes.length > 8 ? 35 + (index % 4) * 285 : 30 + ((Number(entry.x || 0) - minX) / Math.max(1, maxX - minX)) * 900,
     y: scenario.model.nodes.length > 8 ? 470 + Math.floor(index / 4) * 160 : 470 + ((Number(entry.y || 0) - minY) / Math.max(1, maxY - minY)) * 132,
     zone: "operations",
