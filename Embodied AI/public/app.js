@@ -1,7 +1,6 @@
 import { createMeshWorld } from "./webgl-world.js";
 import { createExecutionUI } from "./execution-ui.js";
 import { initExperimentsUI } from "./experiments-ui.js";
-import { initJouleChat } from "./joule-chat.js";
 import { rememberEdit, travelHistory, moveObject, setObjectCapacity, addTrail, buildObjectCatalog } from "./editor-core.js";
 import { UNITREE_MODELS, isUnitree, unitreeModelKey, setRobotRepresentation } from "./robot-models.js";
 
@@ -379,7 +378,7 @@ function interfaceContent(tool) {
   if (tool === "agent") content = `
     <h4>Joule · NOT CONNECTED</h4><p>This action starts a bounded local mock plan. It does not call Joule or execute its recommendations.</p>
     <label for="workspace-agent-goal">Operations goal</label><textarea id="workspace-agent-goal" maxlength="2000" rows="3">${escapeHtml($("#agent-goal").value)}</textarea>
-    <div class="operations-actions">${operationButton("joule-chat", "Open chat & reusable routines")}${operationButton("agent-start", "Start local mock plan")}${operationButton("trace", "Open recorded trace")}</div>
+    <div class="operations-actions">${operationButton("agent-start", "Start local mock plan")}${operationButton("trace", "Open recorded trace")}</div>
     <h4>Latest local plan</h4><pre id="workspace-agent-plan">${escapeHtml(state.agentPlan ? JSON.stringify(state.agentPlan, null, 2) : "No completed local plan yet.")}</pre>`;
   if (tool === "approval") content = `
     <h4>Assisted execution</h4><p>Assisted mode pauses before each simulated action. Approve or reject the actual pending request in the twin. Live execution remains locked; shadow uses synthetic inputs.</p>
@@ -441,7 +440,6 @@ async function handleOperation(action) {
     await runAgentTask();
   }
   if (action === "trace") reveal(".console-panel");
-  if (action === "joule-chat") reveal("#joule-chat");
   if (action === "analytics") { window.location.assign("/analytics.html"); return; }
   if (action === "timeline") reveal("#event-timeline");
   if (action === "export") $("#mission-export").click();
@@ -1200,7 +1198,6 @@ function selectRobotScenario(id) {
   $("#robot-sensor").textContent = scenario.sensors.slice(0, 2).join(" + ");
   $("#robot-command").textContent = "routine ready";
   state.executionUI?.select(id);
-  state.jouleChat?.refreshSelection();
 }
 
 function renderRobotLab(scenarios) {
@@ -1478,13 +1475,6 @@ async function boot() {
     onRunningChange:running=>{state.experimentRunning=running;syncEditorControls();}
   }); }
   catch (error) { $("#industrial-experiments").textContent = `Industrial experiments unavailable: ${error.message}`; }
-  state.jouleChat = initJouleChat({ api, getScenario: () => state.activeRobotScenario, runRecipe: async workflow => {
-    if (state.robotRunning) throw new Error("Finish or stop the current routine.");
-    selectRobotScenario(workflow.scenarioId);
-    $("#robot-mode").value = workflow.mode; $("#robot-cycles").value = workflow.cycles; $("#robot-speed").value = workflow.speed;
-    for (const [key, id] of Object.entries({ sku: "case-sku", rfidEpc: "case-rfid", quantity: "case-quantity", destination: "case-destination", rackState: "case-rack-state" })) $("#" + id).value = workflow.caseContext[key];
-    const job = await runRobotRoutine(); if (!job) throw new Error("Routine was not queued.");
-  } });
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/service-worker.js").catch(() => {});
 }
 
