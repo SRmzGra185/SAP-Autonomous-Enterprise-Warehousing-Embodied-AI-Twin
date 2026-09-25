@@ -189,5 +189,5 @@ html { scroll-behavior: smooth; }
 .planner-panel .joule-chat .joule-status { color: var(--muted); }
 .planner-panel .joule-chat .joule-prompts-label { color: #5b3fd6; }
 .planner-panel .joule-chat .joule-recipe-dialog { border: 0; border-radius: 20px; background: var(--joule-surface); box-shadow: var(--joule-shadow); color: var(--navy); }
-.planner-panel .joule-chat .joule-recipe-dialog::backdrop { background: rgba(13, 8, 51, .5); }
+.planner-panel .joule-chat .joule-recipe-dialog::backdrop { background: rgba(13, 8, 51, .2); }
 .planner-panel .joule-chat pre { background: #fff; border: 1px solid #ede9fe; border-radius: 10px; color: var(--navy); }
