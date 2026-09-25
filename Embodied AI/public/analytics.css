@@ -164,3 +164,30 @@ footer { display: flex; flex-wrap: wrap; gap: 18px; justify-content: space-betwe
 .kpi.joule .k-l { display: flex; align-items: center; gap: 5px; }
 .kpi.joule .k-l::before { content: ""; width: 13px; height: 13px; background: var(--joule-violet); -webkit-mask: var(--joule-icon) center / contain no-repeat; mask: var(--joule-icon) center / contain no-repeat; }
 #jouleTag::before { content: ""; width: 12px; height: 12px; border-radius: 0; box-shadow: none; background: var(--joule-violet); -webkit-mask: var(--joule-icon) center / contain no-repeat; mask: var(--joule-icon) center / contain no-repeat; }
+
+/* ---- Joule planner & reusable recipes (routine chat merged into the dashboard) ---- */
+html { scroll-behavior: smooth; }
+.plan-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; font: 700 12px var(--font-medium); color: #5b3fd6; text-decoration: none; }
+.plan-link:hover { text-decoration: underline; }
+.planner-panel { margin-top: 16px; scroll-margin-top: 12px; }
+.planner-intro { margin: 2px 0 6px; font-size: 12.5px; color: var(--ink-2); }
+.planner-intro strong { color: #5b3fd6; }
+.planner-panel .joule-chat { background: transparent; border: 0; padding: 0; color: var(--ink); }
+.planner-panel .joule-chat h2 { display: flex; align-items: center; gap: 8px; font: 700 22px/1 var(--font); color: #5b3fd6; }
+.planner-panel .joule-chat h2::before { content: ""; width: 22px; height: 22px; flex-shrink: 0; background: var(--joule-violet); -webkit-mask: var(--joule-icon) center / contain no-repeat; mask: var(--joule-icon) center / contain no-repeat; }
+.planner-panel .joule-chat p { color: var(--ink-2); }
+.planner-panel .joule-chat .joule-badge { background: #fffbeb; color: #b45309; border-radius: 999px; }
+.planner-panel .joule-chat .joule-badge.connected { background: #ede9fe; color: #5b3fd6; }
+.planner-panel .joule-chat label { color: var(--ink); }
+.planner-panel .joule-chat input, .planner-panel .joule-chat select, .planner-panel .joule-chat textarea { border-color: var(--mist); border-radius: 8px; color: var(--navy); }
+.planner-panel .joule-chat input:focus, .planner-panel .joule-chat select:focus, .planner-panel .joule-chat textarea:focus { outline: 2px solid #c4b5fd; border-color: #9333ea; }
+.planner-panel .joule-chat button { border-color: #c9b8ff; border-radius: 8px; color: #5b3fd6; font-weight: 700; }
+.planner-panel .joule-chat button:hover:not(:disabled) { background: #f5f1ff; }
+.planner-panel .joule-chat button[type="submit"] { background: #5b3fd6; border-color: #5b3fd6; color: #fff; box-shadow: 0 2px 8px rgba(91, 63, 214, .3); }
+.planner-panel .joule-chat button[type="submit"]:hover:not(:disabled) { background: #6b21c8; }
+.planner-panel .joule-chat .joule-message { background: #faf8ff; border: 1px solid #ede9fe; color: var(--navy); }
+.planner-panel .joule-chat .joule-status { color: var(--muted); }
+.planner-panel .joule-chat .joule-prompts-label { color: #5b3fd6; }
+.planner-panel .joule-chat .joule-recipe-dialog { border: 0; border-radius: 20px; background: var(--joule-surface); box-shadow: var(--joule-shadow); color: var(--navy); }
+.planner-panel .joule-chat .joule-recipe-dialog::backdrop { background: rgba(13, 8, 51, .5); }
+.planner-panel .joule-chat pre { background: #fff; border: 1px solid #ede9fe; border-radius: 10px; color: var(--navy); }

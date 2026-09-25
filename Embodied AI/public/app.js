@@ -378,7 +378,7 @@ function interfaceContent(tool) {
   if (tool === "agent") content = `
     <h4 class="workspace-joule-title"><i class="joule-icon" aria-hidden="true"></i>Joule · NOT CONNECTED</h4><p>This action starts a bounded local mock plan. It does not call Joule or execute its recommendations.</p>
     <label for="workspace-agent-goal">Operations goal</label><textarea id="workspace-agent-goal" maxlength="2000" rows="3">${escapeHtml($("#agent-goal").value)}</textarea>
-    <div class="operations-actions">${operationButton("agent-start", "Start local mock plan")}${operationButton("trace", "Open recorded trace")}</div>
+    <div class="operations-actions">${operationButton("joule-chat", '<i class="joule-icon" aria-hidden="true"></i>Open Joule planner & recipes')}${operationButton("agent-start", "Start local mock plan")}${operationButton("trace", "Open recorded trace")}</div>
     <h4>Latest local plan</h4><pre id="workspace-agent-plan">${escapeHtml(state.agentPlan ? JSON.stringify(state.agentPlan, null, 2) : "No completed local plan yet.")}</pre>`;
   if (tool === "approval") content = `
     <h4>Assisted execution</h4><p>Assisted mode pauses before each simulated action. Approve or reject the actual pending request in the twin. Live execution remains locked; shadow uses synthetic inputs.</p>
@@ -440,6 +440,7 @@ async function handleOperation(action) {
     await runAgentTask();
   }
   if (action === "trace") reveal(".console-panel");
+  if (action === "joule-chat") { window.location.assign("/analytics.html#joule-planner"); return; }
   if (action === "analytics") { window.location.assign("/analytics.html"); return; }
   if (action === "timeline") reveal("#event-timeline");
   if (action === "export") $("#mission-export").click();
@@ -1294,7 +1295,7 @@ function renderRibbon(tab) {
     simulate: [["run", "▶", "Run"], ["realtime", "◉", "Paced playback"], ["monte", "∿", "Monte Carlo"], ["rewind", "↺", "Reset clock"], ["save", "▣", "Save Snapshot"]],
     integrate: [["connect", "◈", "SAP BDC Connect"], ["agent", "joule", "Joule"], ["analytics", "joule", "Joule Analytics"]],
     audit: [["approval", "⌑", "Human Approval"], ["evidence", "▤", "Evidence & Audit"], ["save", "▣", "Save Snapshot"]],
-    agent: [["agent", "joule", "Joule · Local Mock"], ["trace", "⇄", "Recorded Trace"]],
+    agent: [["agent", "joule", "Joule · Local Mock"], ["planner", "joule", "Planner & recipes"], ["trace", "⇄", "Recorded Trace"]],
     robot: [["robotlab", "◇", "Open Embodied AI Lab"], ["loadcell", "▣", "Connect Workcell"], ["stepgrafcet", "↦", "Next GRAFCET"], ["runroutine", "▶", "Run Routine"], ["shadow", "◉", "Shadow Mode"], ["save", "▣", "Save Snapshot"]],
     humanoid: [["humanoidlab", "◇", "Open Digital Twin Robotics"], ["h1train", "∿", "Train Policy"], ["h1deploy", "▶", "Deploy & Stand Up"], ["h1teleop", "↦", "Walk Forward"]]
   };
@@ -1324,6 +1325,7 @@ function handleRibbonAction(button) {
   if (command === "trace") return handleOperation(command);
 
   if (command === "analytics") { window.location.assign("/analytics.html"); return; }
+  if (command === "planner") { window.location.assign("/analytics.html#joule-planner"); return; }
   if (command === "robotlab") { document.querySelector("#robot-lab").scrollIntoView({ behavior: "smooth", block: "start" }); return showToast("Embodied AI Lab opened."); }
   if (command === "loadcell") return loadRobotCell();
   if (command === "stepgrafcet") return advanceRobotRoutine();

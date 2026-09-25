@@ -8,6 +8,8 @@
     <link rel="stylesheet" href="/analytics.css" />
     <script src="/vendor/echarts.min.js" defer></script>
     <script src="/analytics.js" defer></script>
+    <script type="module" src="/analytics-planner.js"></script>
+    <link rel="stylesheet" href="/joule-chat.css" />
   </head>
   <body>
 
@@ -64,9 +66,16 @@
           <h3>Risks</h3>
           <ul id="jouleRisks" class="joule-risks"></ul>
           <p class="foot" id="jouleFoot"></p>
+          <a class="plan-link" href="#joule-planner"><i class="joule-icon" aria-hidden="true"></i>Plan the next routine with Joule ↓</a>
         </section>
       </aside>
     </div>
+
+    <section class="panel planner-panel" id="joule-planner" aria-label="Joule routine planner and reusable recipes">
+      <div class="sec"><span class="badge">5</span><span class="name">Joule · plan &amp; reusable recipes</span></div>
+      <p class="planner-intro">Plan a routine with Joule, then keep it as a recipe: <strong>Preview recipe</strong> validates it and <strong>Download BAT + recipe JSON</strong> exports it, so the same workflow replays between steps without asking Joule again.</p>
+      <div id="joule-chat"></div>
+    </section>
 
     <footer><span>INTERNAL – SAP and Partners Only</span><span id="footSrc">Source: SAP Autonomous Operations Twin · DES engine · your most recent run · Intelligence: Joule</span><span>Simulated data for demonstration purposes</span></footer>
     <div id="error" class="error" hidden></div>

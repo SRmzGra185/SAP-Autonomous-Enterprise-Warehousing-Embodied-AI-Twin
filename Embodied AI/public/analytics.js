@@ -251,11 +251,13 @@
       const data = await response.json();
       if (response.status === 404 && data.code === "no_simulation_run") {
         $("#empty").hidden = false; $("#layout").hidden = true; $("#mainSub").textContent = "No run yet."; $("#genAt").textContent = "";
+        document.dispatchEvent(new CustomEvent("analytics:run", { detail: {} }));
         return;
       }
       if (!response.ok) throw new Error(data.error || `Request failed (${response.status})`);
       $("#empty").hidden = true; $("#layout").hidden = false;
       state.data = data; renderAll();
+      document.dispatchEvent(new CustomEvent("analytics:run", { detail: { scenarioId: data.kind === "robot_routine" ? data.scenario?.id : null } }));
       if (data.joulePending) loadJoule(data.jobId);
     } catch (error) {
       $("#error").hidden = false; $("#error").textContent = `Analytics unavailable: ${error.message}`; $("#mainSub").textContent = "Failed to load.";

@@ -81,10 +81,11 @@ function recipeRecord(value) {
  * Optional runRecipe(workflow) is called ONLY by the preview's explicit queue button;
  * main owns queuing/approval UI. Without it, this panel only plans and exports.
  * POST result and GET record contract: see src/routine-library.mjs header.
+ * Optional activeLabel names the "use active scenario" button (default: workspace wording).
  * Returns {refreshSelection,destroy}. Call destroy on tenant/session change to erase
  * history and close streams. No conversation history is submitted to the server.
  */
-export function initJouleChat({ api, getScenario, runRecipe }) {
+export function initJouleChat({ api, getScenario, runRecipe, activeLabel }) {
   const root = document.querySelector('#joule-chat');
   if (!root) return null;
   if (typeof api !== 'function' || typeof getScenario !== 'function') throw new TypeError('api and getScenario are required.');
@@ -111,7 +112,7 @@ export function initJouleChat({ api, getScenario, runRecipe }) {
   }
   const scenario = field('scenarioId', 'Scenario', SCENARIOS); scenario.required = true;
   scenario.addEventListener('change', () => { overridden = true; renderPrompts(); });
-  const active = button('Use active workspace scenario', () => { overridden = false; refreshSelection(); });
+  const active = button(activeLabel || 'Use active workspace scenario', () => { overridden = false; refreshSelection(); });
   field('mode', 'Replay mode', [['assisted', 'Assisted · approve in app'], ['simulation', 'Simulation only']]);
   field('sku', 'SKU (optional)'); field('rfidEpc', 'RFID EPC · hex (optional)');
   const quantity = field('quantity', 'Quantity (optional)'); quantity.type = 'number'; quantity.min = '1'; quantity.max = '10000'; quantity.step = '1';
@@ -218,7 +219,7 @@ export function initJouleChat({ api, getScenario, runRecipe }) {
             if (payload.id !== job.jobId || payload.type !== type) throw new Error('Invalid event.');
             if (type === 'job_complete') finish(null, payload.result);
             else if (type === 'job_failed' || type === 'job_cancelled') finish(new Error('Planner stopped.'));
-            else status.textContent = payload.stage === 'aicore' ? `Joule is reasoning on SAP AI Core (${String(payload.model || '').slice(0, 60)})…` : 'Local planner is preparing the predefined workflow…';
+            else status.textContent = payload.stage === 'aicore' ? 'Joule is reasoning…' : 'Local planner is preparing the predefined workflow…';
           } catch { finish(new Error('Invalid planner event.')); }
         });
       }
@@ -239,7 +240,7 @@ export function initJouleChat({ api, getScenario, runRecipe }) {
         || /(?:bearer\s+\S+|(?:password|passwd|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*\S+|https?:\/\/[^\s/]*@)/i.test(goal.value)) throw new Error('Invalid goal.');
       const request = { goal: goal.value, scenarioId: wanted.scenarioId, mode: wanted.mode, caseContext: wanted.caseContext };
       currentRecord = null; lock(true); addMessage('You', request.goal); suggestions.hidden = true;
-      status.textContent = connected ? 'Submitting to Joule on SAP AI Core…' : 'Submitting local planning job…';
+      status.textContent = connected ? 'Submitting to Joule…' : 'Submitting local planning job…';
       const job = await call('/api/joule/chat', { method: 'POST', body: JSON.stringify(request) });
       if (disposed) return;
       const result = await watch(job);
@@ -255,7 +256,7 @@ export function initJouleChat({ api, getScenario, runRecipe }) {
       for (const next of Array.isArray(joule?.nextActions) ? joule.nextActions.slice(0, 3) : []) if (typeof next === 'string') addMessage('Joule · next', next.slice(0, 300));
       renderSuggestions(joule?.fieldSuggestions && typeof joule.fieldSuggestions === 'object' ? joule.fieldSuggestions : null);
       status.textContent = joule
-        ? `Plan ready · Joule on SAP AI Core (${String(joule.model || '').slice(0, 40)}) · recipe stays deterministic · nothing executed. Preview to inspect or export.`
+        ? 'Plan ready · Joule · recipe stays deterministic · nothing executed. Preview to inspect or export.'
         : 'Plan ready · NOT_CONNECTED · nothing executed. Preview to inspect or export.';
     } catch {
       if (!disposed) { currentRecord = null; status.textContent = 'Planning unavailable or input rejected. Check the listed fields and retry. No routine was executed by this panel.'; }
