@@ -150,7 +150,10 @@ async function routeRequest(req, res) {
     if (req.method === "GET" && pathname === "/api/joule/descriptor") return json(res, 200, jouleDescriptor(config, recipeDescriptor()), origin, rate);
     if (req.method === "POST" && pathname === "/api/joule/chat") {
       if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
-      const input = validateChatRequest(await readJson(req, config));
+      // assistant: "joule" (default, SAP AI Core when bound) or "local" (deterministic planner only, no model call)
+      const { assistant = "joule", ...chatBody } = (await readJson(req, config)) || {};
+      if (!["joule", "local"].includes(assistant)) throw new HttpError(400, "assistant must be joule or local.", "validation_error");
+      const input = validateChatRequest(chatBody);
       const job = launchJob("local_recipe_plan", principal, async emit => {
         const plan = buildPlan(input), recipe = buildRecipe(input);
         const cacheKey = crypto.createHash("sha256").update(MODEL_VERSION + JSON.stringify(recipe)).digest("hex");
@@ -163,7 +166,8 @@ async function routeRequest(req, res) {
           if (library.size >= 128) library.delete(library.keys().next().value);
           library.set(saved.id, saved);
         }
-        const joule = await jouleAssist(config, { request: input, plan, principal, emit });
+        const joule = assistant === "local" ? null : await jouleAssist(config, { request: input, plan, principal, emit });
+        if (assistant === "local") plan.answer = plan.answer.replace("NOT_CONNECTED to Joule", "Joule not called (local planner chosen)");
         await emit({ type: "recipe_prepared", recipeId: saved.id, reused, modelCalls: joule ? 1 : 0, executed: false });
         record("recipe_prepared", { recipeId: saved.id, scenarioId: input.scenarioId, reused, assistant: joule ? "aicore" : "local", productionCommands: false }, principal);
         return { answer: joule?.answer || plan.answer, plan: { ...plan, connected: Boolean(joule), assistant: joule ? "aicore" : "local" }, joule, recipe: { id: saved.id, recipe: saved.recipe, bat: saved.bat }, modelCalls: joule ? 1 : 0, reused, storage: "tenant memory; session-only" };

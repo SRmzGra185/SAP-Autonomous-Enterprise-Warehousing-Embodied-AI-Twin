@@ -122,9 +122,12 @@ export function initJouleChat({ api, getScenario, runRecipe, activeLabel }) {
   const goal = node('textarea'); goal.name = 'goal'; goal.maxLength = 2000; goal.required = true; goal.rows = 3;
   goal.placeholder = 'Describe your goal. Choose the scenario and case fields above.'; goalLabel.append(goal);
   const ask = node('button', 'Ask local planner'); ask.type = 'submit';
+  // With Joule connected, the deterministic planner stays one click away: same recipe, no model call.
+  let forceLocal = false;
+  const askLocal = button('Ask local planner', () => { if (busy) return; forceLocal = true; form.requestSubmit(ask); }); askLocal.hidden = true; askLocal.className = 'joule-ask-local';
   const preview = button('Preview recipe', () => { void openPreview(); }); preview.disabled = true;
   const clear = button('Clear conversation', () => { history.length = 0; messages.replaceChildren(); currentRecord = null; preview.disabled = true; suggestions.hidden = true; suggestions.replaceChildren(); });
-  const actions = node('div', undefined, 'joule-actions'); actions.append(ask, preview, clear);
+  const actions = node('div', undefined, 'joule-actions'); actions.append(ask, askLocal, preview, clear);
   const promptBar = node('div', undefined, 'joule-prompts');
   function applyFields(values) {
     if (!values) return;
@@ -172,7 +175,7 @@ export function initJouleChat({ api, getScenario, runRecipe, activeLabel }) {
       connected = true;
       title.textContent = 'Joule'; badge.textContent = 'CONNECTED'; badge.classList.add('connected');
       note.textContent = `Your goal is interpreted in natural language; only the explicit fields configure the four predefined routines, and Joule can only suggest values for them. Nothing executes from this chat; assisted replay still requires approval in the app. Do not enter credentials.`;
-      ask.textContent = 'Ask Joule'; renderPrompts();
+      ask.textContent = 'Ask Joule'; askLocal.hidden = false; renderPrompts();
     } catch { /* stays NOT_CONNECTED */ }
   }
   function refreshSelection() {
@@ -227,7 +230,7 @@ export function initJouleChat({ api, getScenario, runRecipe, activeLabel }) {
     });
   }
   form.addEventListener('submit', async event => {
-    event.preventDefault(); if (busy || disposed) return;
+    event.preventDefault(); const useLocal = forceLocal; forceLocal = false; if (busy || disposed) return;
     refreshSelection();
     try {
       const context = {};
@@ -238,9 +241,9 @@ export function initJouleChat({ api, getScenario, runRecipe, activeLabel }) {
       if (!goal.value.trim() || goal.value.length > 2000
         || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(goal.value)
         || /(?:bearer\s+\S+|(?:password|passwd|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*\S+|https?:\/\/[^\s/]*@)/i.test(goal.value)) throw new Error('Invalid goal.');
-      const request = { goal: goal.value, scenarioId: wanted.scenarioId, mode: wanted.mode, caseContext: wanted.caseContext };
+      const request = { goal: goal.value, scenarioId: wanted.scenarioId, mode: wanted.mode, caseContext: wanted.caseContext, ...(connected && useLocal ? { assistant: 'local' } : {}) };
       currentRecord = null; lock(true); addMessage('You', request.goal); suggestions.hidden = true;
-      status.textContent = connected ? 'Submitting to Joule…' : 'Submitting local planning job…';
+      status.textContent = connected && !useLocal ? 'Submitting to Joule…' : 'Submitting local planning job…';
       const job = await call('/api/joule/chat', { method: 'POST', body: JSON.stringify(request) });
       if (disposed) return;
       const result = await watch(job);
@@ -257,7 +260,7 @@ export function initJouleChat({ api, getScenario, runRecipe, activeLabel }) {
       renderSuggestions(joule?.fieldSuggestions && typeof joule.fieldSuggestions === 'object' ? joule.fieldSuggestions : null);
       status.textContent = joule
         ? 'Plan ready · Joule · recipe stays deterministic · nothing executed. Preview to inspect or export.'
-        : 'Plan ready · NOT_CONNECTED · nothing executed. Preview to inspect or export.';
+        : connected ? 'Plan ready · local planner (Joule not called) · nothing executed. Preview to inspect or export.' : 'Plan ready · NOT_CONNECTED · nothing executed. Preview to inspect or export.';
     } catch {
       if (!disposed) { currentRecord = null; status.textContent = 'Planning unavailable or input rejected. Check the listed fields and retry. No routine was executed by this panel.'; }
     } finally { if (!disposed) lock(false); }
