@@ -36,9 +36,9 @@
 
   function jouleCard() {
     const { joule, jouleError, joulePending } = state.data;
-    if (joule) return kpiCard("Joule", "Live", "", String(joule.model || "").replace(/^anthropic--/, ""), "pos", joule.usage ? `${joule.usage.input + joule.usage.output} tokens` : "");
-    if (joulePending) return kpiCard("Joule", "Thinking…", "", "SAP AI Core", "amber", "summary on its way");
-    return kpiCard("Joule", "Offline", "", "local scoring only", "amber", jouleError || "SAP AI Core not bound");
+    if (joule) return kpiCard("Joule", "Live", "", "● analysis ready", "pos", "summary · recommendations · risks");
+    if (joulePending) return kpiCard("Joule", "Thinking…", "", "analyzing this run", "amber", "summary on its way");
+    return kpiCard("Joule", "Offline", "", "local scoring only", "amber", jouleError || "Joule not connected");
   }
 
   // ---- gauges ------------------------------------------------------------
@@ -157,17 +157,17 @@
     const summary = $("#jouleSummary"), recs = $("#jouleRecs"), risks = $("#jouleRisks");
     recs.replaceChildren(); risks.replaceChildren();
     if (!joule && joulePending) {
-      summary.className = "joule-summary dim thinking"; summary.textContent = "Joule is analyzing this run on SAP AI Core…";
+      summary.className = "joule-summary dim thinking"; summary.textContent = "Joule is analyzing this run…";
       $("#jouleSub").textContent = "Thinking…"; $("#jouleTag").textContent = "Joule thinking"; $("#jouleTag").className = "tag ai"; $("#jouleFoot").textContent = "";
       return;
     }
     if (!joule) {
-      summary.className = "joule-summary dim"; summary.textContent = jouleError ? `Joule unavailable: ${jouleError}. Showing the deterministic result only.` : "Joule is not connected (no SAP AI Core binding). Showing the deterministic result only.";
+      summary.className = "joule-summary dim"; summary.textContent = jouleError ? `Joule unavailable: ${jouleError}. Showing the deterministic result only.` : "Joule is not connected. Showing the deterministic result only.";
       $("#jouleSub").textContent = "Offline"; $("#jouleTag").textContent = "Joule offline"; $("#jouleTag").className = "tag off"; $("#jouleFoot").textContent = "";
       return;
     }
     summary.className = "joule-summary"; summary.textContent = joule.executiveSummary || "Joule returned no summary.";
-    $("#jouleSub").textContent = `Executive summary · ${String(joule.model || "").replace(/^anthropic--/, "")} on SAP AI Core`;
+    $("#jouleSub").textContent = "Executive summary · recommendations · risks";
     $("#jouleTag").textContent = "Joule live"; $("#jouleTag").className = "tag ai live";
     for (const rec of joule.recommendations) {
       const card = el("div", "rec"); card.append(el("b", null, rec.title), el("span", null, rec.detail));
@@ -176,7 +176,7 @@
       recs.append(card);
     }
     for (const risk of joule.risks) risks.append(el("li", null, risk));
-    $("#jouleFoot").textContent = `${joule.usage ? `${joule.usage.input + joule.usage.output} tokens · ` : ""}Recommendations are advisory; nothing executes from this page.`;
+    $("#jouleFoot").textContent = "Recommendations are advisory; nothing executes from this page.";
   }
 
   // Workcell routine: two measured Logistics KPIs on dials, the rest listed as not-yet-measured.

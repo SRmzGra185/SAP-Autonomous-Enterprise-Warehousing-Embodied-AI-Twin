@@ -144,8 +144,9 @@ tr:hover td { background: var(--ghost); }
 .joule-risks li { margin-bottom: 4px; }
 .foot { font-size: 10px; font-style: italic; color: var(--muted-2); margin: 12px 0 0; }
 .brand-mark { width: 24px; height: 24px; flex-shrink: 0; color: #1d2d3e; }
-.jmark { width: 22px; height: 22px; vertical-align: -3px; margin-right: 8px; filter: drop-shadow(0 3px 8px rgba(120, 88, 255, .35)); }
-.ph h2.joule-title { color: #5b3fd6; font-weight: 700; }
+/* Joule title as in the Soriana Fiori assistant header: star and word centred on one line */
+.ph h2.joule-title { display: flex; align-items: center; gap: 8px; color: #5b3fd6; font-weight: 700; line-height: 1; }
+.jmark { width: 20px; height: 20px; flex-shrink: 0; filter: drop-shadow(0 2px 6px rgba(120, 88, 255, .4)); }
 
 /* ---- footer per guide: thin mist rule, gray 9pt ---------------------- */
 footer { display: flex; flex-wrap: wrap; gap: 18px; justify-content: space-between; margin-top: 22px; padding-top: 12px; border-top: .4px solid var(--rule); font-size: 11px; color: var(--muted-2); }
