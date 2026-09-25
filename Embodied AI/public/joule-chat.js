@@ -100,7 +100,7 @@ export function initJouleChat({ api, getScenario, runRecipe, activeLabel }) {
   const messages = node('div', undefined, 'joule-messages'); messages.setAttribute('role', 'log'); messages.setAttribute('aria-live', 'polite');
   const suggestions = node('div', undefined, 'joule-suggestions'); suggestions.hidden = true;
   const status = node('p', 'Ready to plan. Nothing has run.', 'joule-status'); status.setAttribute('role', 'status');
-  const form = node('form');
+  const form = node('form'); form.noValidate = true; // our own messages instead of the browser's 'Please fill out this field'
   const fields = node('div', undefined, 'joule-fields');
   const inputs = {};
   function field(name, label, options) {
@@ -232,6 +232,11 @@ export function initJouleChat({ api, getScenario, runRecipe, activeLabel }) {
   form.addEventListener('submit', async event => {
     event.preventDefault(); const useLocal = forceLocal; forceLocal = false; if (busy || disposed) return;
     refreshSelection();
+    if (!goal.value.trim()) {
+      if (connected && !useLocal) { status.textContent = 'Write the result you want, or pick a prompt from the library. Ask local planner works without a goal.'; goal.focus?.(); return; }
+      const name = (SCENARIOS.find(([id]) => id === scenario.value)?.[1] || 'selected').toLowerCase();
+      goal.value = `Prepare the ${name} routine with the fields above.`;
+    }
     try {
       const context = {};
       for (const key of ['sku', 'rfidEpc', 'quantity', 'destination', 'rackState']) {
@@ -253,12 +258,15 @@ export function initJouleChat({ api, getScenario, runRecipe, activeLabel }) {
         || typeof result.plan.connected !== 'boolean' || result.plan.executed !== false
         || JSON.stringify(record.recipe) !== JSON.stringify(wanted)) throw new Error('Invalid planner result.');
       currentRecord = record;
+      root.dispatchEvent?.(new CustomEvent('joule:recipe', { bubbles: true, detail: { id: record.id } })); // lets a recipe library refresh
       const joule = result.joule && typeof result.joule === 'object' ? result.joule : null;
       addMessage(joule ? 'Joule' : 'Local planner', result.answer);
       for (const risk of Array.isArray(joule?.risks) ? joule.risks.slice(0, 3) : []) if (typeof risk === 'string') addMessage('Joule · risk', risk.slice(0, 300));
       for (const next of Array.isArray(joule?.nextActions) ? joule.nextActions.slice(0, 3) : []) if (typeof next === 'string') addMessage('Joule · next', next.slice(0, 300));
       renderSuggestions(joule?.fieldSuggestions && typeof joule.fieldSuggestions === 'object' ? joule.fieldSuggestions : null);
-      status.textContent = joule
+      status.textContent = joule && result.jouleReused
+        ? 'Plan ready · Joule answer reused (no new Joule call) · nothing executed. Preview to inspect or export.'
+        : joule
         ? 'Plan ready · Joule · recipe stays deterministic · nothing executed. Preview to inspect or export.'
         : connected ? 'Plan ready · local planner (Joule not called) · nothing executed. Preview to inspect or export.' : 'Plan ready · NOT_CONNECTED · nothing executed. Preview to inspect or export.';
     } catch {
@@ -293,7 +301,7 @@ export function initJouleChat({ api, getScenario, runRecipe, activeLabel }) {
     if (disposed || busy || runButton.disabled || typeof runRecipe !== 'function' || !currentRecord) return;
     const recipe = validateClientRecipe(currentRecord.recipe); lock(true); runButton.disabled = true;
     try {
-      await runRecipe({ scenarioId: recipe.scenarioId, mode: recipe.mode, cycles: 1, speed: 1, caseContext: recipe.caseContext });
+      await runRecipe({ recipeId: currentRecord.id, scenarioId: recipe.scenarioId, mode: recipe.mode, cycles: 1, speed: 1, caseContext: recipe.caseContext });
       if (!disposed && modal.open) modal.close();
       if (!disposed) modalStatus.textContent = 'Handed to the local app. Review progress and assisted approvals there; completion is not assumed.';
       if (!disposed) status.textContent = recipe.mode === 'assisted'

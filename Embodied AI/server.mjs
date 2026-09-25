@@ -18,7 +18,8 @@ import { composeRobotTwin, robotScenarios, robotScenarioById, robotScenarioIds, 
 import { createApprovalGate } from "./src/approvals.mjs";
 import { describeExceptionControls, validateResolutionProof } from "./src/exception-resolution.mjs";
 import { experimentTemplate, validateExperimentProfile } from "./src/industrial-timing.mjs";
-import { descriptor as recipeDescriptor, validateRequest as validateChatRequest, buildPlan, buildRecipe, exportBat } from "./src/routine-library.mjs";
+import { descriptor as recipeDescriptor, validateRequest as validateChatRequest, buildPlan, buildRecipe, exportBat, validateRecipe } from "./src/routine-library.mjs";
+import { recordRun, listing, rankRecipes, applyVariant, jouleRecipeInsights, hash as recipeHash } from "./src/recipe-library.mjs";
 import { validateOptimizationInput } from "./validation.mjs";
 import { runAgentTask, runtimeDescriptor } from "./orchestrator.mjs";
 import { runLayoutOptimization } from "./src/optimizer.mjs";
@@ -38,6 +39,45 @@ const isaac = createIsaacBridge(config);
 const humanoidLab = createHumanoidLab(isaac);
 const runtime = config.orchestrator.enabled ? runtimeDescriptor(config) : operationsRuntimeDescriptor(config);
 const recipes = new Map();
+// Per-tenant counters that show how many Joule calls the recipe cache avoided, and the cached insights.
+const recipeUsage = new Map(), recipeInsightsCache = new Map();
+const usageOf = (tenantId) => { if (!recipeUsage.has(tenantId)) recipeUsage.set(tenantId, { jouleCalls: 0, jouleReused: 0, localPlans: 0, insightCalls: 0, insightReused: 0 }); return recipeUsage.get(tenantId); };
+function tenantLibrary(tenantId) { if (!recipes.has(tenantId)) recipes.set(tenantId, new Map()); return recipes.get(tenantId); }
+// Store a recipe once per tenant (same content = same entry), counting reuses.
+function saveRecipe(principal, recipe, source) {
+  const library = tenantLibrary(principal.tenantId);
+  const cacheKey = crypto.createHash("sha256").update(MODEL_VERSION + JSON.stringify(recipe)).digest("hex");
+  let saved = [...library.values()].find((item) => item.cacheKey === cacheKey);
+  const reused = Boolean(saved);
+  if (saved) saved.uses = (saved.uses || 1) + 1;
+  else {
+    saved = { id: "recipe_" + crypto.randomUUID(), tenantId: principal.tenantId, ownerId: principal.userId, cacheKey, recipe, bat: exportBat(), source, createdAt: new Date().toISOString(), uses: 1, runs: [], answers: new Map() };
+    if (library.size >= 128) library.delete(library.keys().next().value);
+    library.set(saved.id, saved);
+  }
+  return { saved, reused };
+}
+// Start a robot routine; when it comes from a recipe, its outcome is recorded on that recipe.
+function startRobotRoutine(principal, input, saved = null) {
+  const scenario = robotScenarioById(input.scenarioId);
+  if (input.mode === "live") {
+    record("robot_live_route_denied", { scenarioId: input.scenarioId, mode: input.mode, result: "denied" }, principal);
+    throw new HttpError(403, "Live robot commands are disabled. Use simulation, shadow, or assisted mode.", "robot_live_denied");
+  }
+  if ([...jobs.values()].some((job) => job.tenantId === principal.tenantId && job.kind === "robot_routine" && ["queued", "running", "awaiting_approval"].includes(job.status))) throw new HttpError(409, "Stop or finish the active routine before starting another.", "routine_busy");
+  const job = launchJob("robot_routine", principal, async (emit, controls, current) => {
+    try {
+      const result = await runRobotRoutine(scenario, input, emit, controls);
+      if (saved) recordRun(saved, { jobId: current.id, cycles: input.cycles, result, kpis: computeLogisticsKpis({ ...current, result }) });
+      return result;
+    } catch (error) {
+      if (saved) recordRun(saved, { jobId: current.id, cycles: input.cycles, error: error.message, cancelled: current.controller.signal.aborted });
+      throw error;
+    }
+  });
+  record("robot_routine_queued", { jobId: job.id, scenarioId: input.scenarioId, mode: input.mode, cycles: input.cycles, recipeId: saved?.id || null, result: "queued" }, principal);
+  return job;
+}
 const challengeScenario = robotScenarioById("autonomous-inspection");
 const challengeModel = composeRobotTwin(defaultModel, defaultModel, challengeScenario);
 
@@ -146,7 +186,7 @@ async function routeRequest(req, res) {
   }
 
   if (pathname.startsWith("/api/")) {
-    const principal = await authenticate(req, config), agentRoute = ["/api/agent/tasks", "/api/joule/chat", "/api/optimizations", "/api/analytics/last-run/joule"].includes(pathname), rate = limit(`${rateKey(req, principal)}:${agentRoute ? "agent" : "api"}`, agentRoute ? config.rateLimit.agentMax : config.rateLimit.max);
+    const principal = await authenticate(req, config), agentRoute = ["/api/agent/tasks", "/api/joule/chat", "/api/optimizations", "/api/analytics/last-run/joule", "/api/recipes/insights"].includes(pathname), rate = limit(`${rateKey(req, principal)}:${agentRoute ? "agent" : "api"}`, agentRoute ? config.rateLimit.agentMax : config.rateLimit.max);
     if (req.method === "GET" && pathname === "/api/joule/descriptor") return json(res, 200, jouleDescriptor(config, recipeDescriptor()), origin, rate);
     if (req.method === "POST" && pathname === "/api/joule/chat") {
       if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
@@ -156,23 +196,59 @@ async function routeRequest(req, res) {
       const input = validateChatRequest(chatBody);
       const job = launchJob("local_recipe_plan", principal, async emit => {
         const plan = buildPlan(input), recipe = buildRecipe(input);
-        const cacheKey = crypto.createHash("sha256").update(MODEL_VERSION + JSON.stringify(recipe)).digest("hex");
-        if (!recipes.has(principal.tenantId)) recipes.set(principal.tenantId, new Map());
-        const library = recipes.get(principal.tenantId);
-        let saved = [...library.values()].find(item => item.cacheKey === cacheKey);
-        const reused = Boolean(saved);
-        if (!saved) {
-          saved = { id: "recipe_" + crypto.randomUUID(), tenantId: principal.tenantId, ownerId: principal.userId, cacheKey, recipe, bat: exportBat() };
-          if (library.size >= 128) library.delete(library.keys().next().value);
-          library.set(saved.id, saved);
+        const { saved, reused } = saveRecipe(principal, recipe, "chat");
+        const usage = usageOf(principal.tenantId), goalKey = recipeHash(input.goal.trim().toLowerCase().replace(/\s+/g, " "));
+        let joule = null, jouleReused = false;
+        if (assistant === "local") { usage.localPlans += 1; plan.answer = plan.answer.replace("NOT_CONNECTED to Joule", "Joule not called (local planner chosen)"); }
+        else if (saved.answers?.has(goalKey)) { joule = saved.answers.get(goalKey); jouleReused = true; usage.jouleReused += 1; }
+        else {
+          joule = await jouleAssist(config, { request: input, plan, principal, emit });
+          if (joule) { usage.jouleCalls += 1; saved.answers ||= new Map(); saved.answers.set(goalKey, joule); if (saved.answers.size > 8) saved.answers.delete(saved.answers.keys().next().value); }
+          else usage.localPlans += 1;
         }
-        const joule = assistant === "local" ? null : await jouleAssist(config, { request: input, plan, principal, emit });
-        if (assistant === "local") plan.answer = plan.answer.replace("NOT_CONNECTED to Joule", "Joule not called (local planner chosen)");
-        await emit({ type: "recipe_prepared", recipeId: saved.id, reused, modelCalls: joule ? 1 : 0, executed: false });
-        record("recipe_prepared", { recipeId: saved.id, scenarioId: input.scenarioId, reused, assistant: joule ? "aicore" : "local", productionCommands: false }, principal);
-        return { answer: joule?.answer || plan.answer, plan: { ...plan, connected: Boolean(joule), assistant: joule ? "aicore" : "local" }, joule, recipe: { id: saved.id, recipe: saved.recipe, bat: saved.bat }, modelCalls: joule ? 1 : 0, reused, storage: "tenant memory; session-only" };
+        const modelCalls = joule && !jouleReused ? 1 : 0;
+        await emit({ type: "recipe_prepared", recipeId: saved.id, reused, jouleReused, modelCalls, executed: false });
+        record("recipe_prepared", { recipeId: saved.id, scenarioId: input.scenarioId, reused, jouleReused, assistant: joule ? "aicore" : "local", productionCommands: false }, principal);
+        return { answer: joule?.answer || plan.answer, plan: { ...plan, connected: Boolean(joule), assistant: joule ? "aicore" : "local" }, joule, jouleReused, recipe: { id: saved.id, recipe: saved.recipe, bat: saved.bat }, modelCalls, reused, storage: "tenant memory; export BAT + JSON to keep it" };
       });
       return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
+    }
+    if (req.method === "GET" && pathname === "/api/recipes") {
+      const items = [...tenantLibrary(principal.tenantId).values()].map(listing);
+      return json(res, 200, { recipes: items, ranking: rankRecipes(items), usage: usageOf(principal.tenantId), bat: exportBat(), insights: [...(recipeInsightsCache.get(principal.tenantId)?.values() || [])][0] || null, storage: "tenant memory; export BAT + JSON to keep recipes across restarts" }, origin, rate);
+    }
+    if (req.method === "POST" && pathname === "/api/recipes/import") {
+      if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
+      const body = await readJson(req, config);
+      let recipe;
+      try { recipe = validateRecipe(body?.recipe); } catch (error) { throw new HttpError(400, `Not a valid routine.recipe.json: ${error.message}`, "validation_error"); }
+      const { saved, reused } = saveRecipe(principal, recipe, "import");
+      record("recipe_imported", { recipeId: saved.id, reused }, principal);
+      return json(res, 200, { recipe: listing(saved), reused }, origin, rate);
+    }
+    if (req.method === "POST" && pathname === "/api/recipes/insights") {
+      if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
+      const items = [...tenantLibrary(principal.tenantId).values()].map(listing);
+      if (!items.length) throw new HttpError(400, "No recipes yet. Plan a routine in the Joule chat first.", "validation_error");
+      if (!recipeInsightsCache.has(principal.tenantId)) recipeInsightsCache.set(principal.tenantId, new Map());
+      const usage = usageOf(principal.tenantId);
+      let insights = null, error = null;
+      try { insights = await jouleRecipeInsights(config, { items, principal, cache: recipeInsightsCache.get(principal.tenantId) }); }
+      catch (failure) { error = String(failure.message || failure).slice(0, 200); }
+      if (insights?.cached) usage.insightReused += 1; else if (insights) usage.insightCalls += 1;
+      record("recipe_insights", { recipes: items.length, cached: Boolean(insights?.cached), joule: Boolean(insights), result: insights ? "generated" : "local_only" }, principal);
+      return json(res, 200, { insights, error, ranking: rankRecipes(items), usage }, origin, rate);
+    }
+    const recipeRunMatch = pathname.match(/^\/api\/recipes\/([A-Za-z0-9_-]+)\/run$/);
+    if (req.method === "POST" && recipeRunMatch) {
+      if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required to start a routine.", "role_denied");
+      const base = tenantLibrary(principal.tenantId).get(recipeRunMatch[1]); assertTenantResource(base, principal);
+      const body = await readJson(req, config);
+      const { recipe, cycles } = applyVariant(base.recipe, body?.variant || {});
+      const target = JSON.stringify(recipe) === JSON.stringify(base.recipe) ? base : saveRecipe(principal, recipe, "joule").saved;
+      const input = validateRobotRoutineInput({ scenarioId: recipe.scenarioId, mode: recipe.mode, cycles, speed: 1, caseContext: recipe.caseContext }, robotScenarioIds);
+      const job = startRobotRoutine(principal, input, target);
+      return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status, recipeId: target.id, mode: recipe.mode }, origin, rate);
     }
     const recipeMatch = pathname.match(/^\/api\/recipes\/([A-Za-z0-9_-]+)$/);
     if (req.method === "GET" && recipeMatch) {
@@ -292,14 +368,11 @@ async function routeRequest(req, res) {
     }
     if (req.method === "POST" && pathname === "/api/robot-routines") {
       if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required to start a routine.", "role_denied");
-      const input = validateRobotRoutineInput(await readJson(req, config), robotScenarioIds), scenario = robotScenarioById(input.scenarioId);
-      if (input.mode === "live") {
-        record("robot_live_route_denied", { scenarioId: input.scenarioId, mode: input.mode, result: "denied" }, principal);
-        throw new HttpError(403, "Live robot commands are disabled. Use simulation, shadow, or assisted mode.", "robot_live_denied");
-      }
-      if ([...jobs.values()].some((job) => job.tenantId === principal.tenantId && job.kind === "robot_routine" && ["queued", "running", "awaiting_approval"].includes(job.status))) throw new HttpError(409, "Stop or finish the active routine before starting another.", "routine_busy");
-      const job = launchJob("robot_routine", principal, (emit, controls) => runRobotRoutine(scenario, input, emit, controls));
-      record("robot_routine_queued", { jobId: job.id, scenarioId: input.scenarioId, mode: input.mode, cycles: input.cycles, result: "queued" }, principal);
+      const body = await readJson(req, config);
+      const input = validateRobotRoutineInput(body, robotScenarioIds);
+      // optional link to the recipe it came from (Queue in local app), so the run is recorded there
+      const linked = typeof body?.recipeId === "string" ? tenantLibrary(principal.tenantId).get(body.recipeId) || null : null;
+      const job = startRobotRoutine(principal, input, linked && linked.tenantId === principal.tenantId ? linked : null);
       return json(res, 202, { jobId: job.id, events: `/api/jobs/${job.id}/events`, status: job.status }, origin, rate);
     }
     if (req.method === "GET" && pathname === "/api/robot-routines/active") return json(res, 200, [...jobs.values()].filter((job) => job.tenantId === principal.tenantId && job.kind === "robot_routine" && ["queued", "running", "awaiting_approval"].includes(job.status)).map(jobEnvelope), origin, rate);

@@ -1256,7 +1256,8 @@ async function runRobotRoutine() {
   if (!scenario) return;
   const caseContext = { sku: $("#case-sku").value, rfidEpc: $("#case-rfid").value, quantity: Number($("#case-quantity").value), destination: $("#case-destination").value, rackState: $("#case-rack-state").value };
   const guardrails = { allowZoneC: $("#guardrail-zone-c").checked, allowHeavyLift: $("#guardrail-heavy-lift").checked };
-  const button = $("#run-robot-routine"), payload = { scenarioId: scenario.id, mode: $("#robot-mode").value, autonomy: $("#robot-autonomy").value, guardrails, cycles: Number($("#robot-cycles").value), speed: Number($("#robot-speed").value), caseContext };
+  const button = $("#run-robot-routine"), payload = { scenarioId: scenario.id, mode: $("#robot-mode").value, autonomy: $("#robot-autonomy").value, guardrails, cycles: Number($("#robot-cycles").value), speed: Number($("#robot-speed").value), caseContext , ...(state.pendingRecipeId ? { recipeId: state.pendingRecipeId } : {}) };
+  state.pendingRecipeId = null;
   button.disabled = true; button.textContent = "Routine running…";
   state.grafcetVisited = new Set(); state.activeGrafcetTransition = null;
   try {
@@ -1484,6 +1485,7 @@ async function boot() {
     selectRobotScenario(workflow.scenarioId);
     $("#robot-mode").value = workflow.mode; $("#robot-cycles").value = workflow.cycles; $("#robot-speed").value = workflow.speed;
     for (const [key, id] of Object.entries({ sku: "case-sku", rfidEpc: "case-rfid", quantity: "case-quantity", destination: "case-destination", rackState: "case-rack-state" })) $("#" + id).value = workflow.caseContext[key];
+    state.pendingRecipeId = workflow.recipeId || null; // the run is recorded on its recipe
     const job = await runRobotRoutine(); if (!job) throw new Error("Finish or stop the current run first; the routine was not queued.");
     // the approval panel lives in the Workcell, far above this chat: go there so the pause is visible
     document.querySelector("#mission-scenario")?.scrollIntoView({ behavior: "smooth", block: "start" });

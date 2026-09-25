@@ -20,7 +20,7 @@ const planner = initJouleChat({
   getScenario: () => runScenario,
   activeLabel: "Use this run's scenario",
   runRecipe: async (workflow) => {
-    const job = await api("/api/robot-routines", { method: "POST", body: JSON.stringify({ scenarioId: workflow.scenarioId, mode: workflow.mode, cycles: workflow.cycles, speed: workflow.speed, caseContext: workflow.caseContext }) });
+    const job = await api("/api/robot-routines", { method: "POST", body: JSON.stringify({ recipeId: workflow.recipeId, scenarioId: workflow.scenarioId, mode: workflow.mode, cycles: workflow.cycles, speed: workflow.speed, caseContext: workflow.caseContext }) });
     if (!job?.jobId) throw new Error("Routine was not queued.");
     setTimeout(() => window.location.assign("/"), 900); // the twin picks up the active routine and its approvals
   }

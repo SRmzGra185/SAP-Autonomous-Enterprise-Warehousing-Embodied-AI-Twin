@@ -9,6 +9,7 @@
     <script src="/vendor/echarts.min.js" defer></script>
     <script src="/analytics.js" defer></script>
     <script type="module" src="/analytics-planner.js"></script>
+    <script type="module" src="/analytics-recipes.js"></script>
     <link rel="stylesheet" href="/joule-chat.css" />
   </head>
   <body>
@@ -73,8 +74,23 @@
 
     <section class="panel planner-panel" id="joule-planner" aria-label="Joule routine planner and reusable recipes">
       <div class="sec"><span class="badge">5</span><span class="name">Joule · plan &amp; reusable recipes</span></div>
-      <p class="planner-intro">Plan a routine with Joule, then keep it as a recipe: <strong>Preview recipe</strong> validates it and <strong>Download BAT + recipe JSON</strong> exports it, so the same workflow replays between steps without asking Joule again.</p>
+      <p class="planner-intro">Plan a routine with Joule, then keep it as a recipe: <strong>Preview recipe</strong> validates it and <strong>Download BAT + recipe JSON</strong> exports it, so the same workflow replays between steps without asking Joule again. Every recipe lands in the library below; asking the same thing twice reuses Joule's answer instead of calling it again.</p>
       <div id="joule-chat"></div>
+    </section>
+
+    <section class="panel library-panel" id="recipe-library" aria-label="Recipe library and Joule optimization">
+      <div class="sec"><span class="badge">6</span><span class="name">Recipe library · Joule optimization</span></div>
+      <div class="ph"><h2>Reusable recipes</h2><div class="sub" id="libSub">Loading…</div></div>
+      <div class="lib-tools">
+        <button class="btn" id="libInsights" type="button"><i class="joule-icon" aria-hidden="true"></i>Find patterns with Joule</button>
+        <label class="btn ghost" for="libImport">Import recipe JSON</label><input type="file" id="libImport" accept=".json,application/json" hidden />
+        <button class="btn ghost" id="libRefresh" type="button">Refresh</button>
+      </div>
+      <div class="lib-usage" id="libUsage"></div>
+      <div class="lib-insights" id="libInsightsBox" hidden></div>
+      <div class="table-wrap"><table id="libTable" hidden><thead><tr><th>Recipe</th><th>Mode</th><th class="num">Units</th><th class="num">Uses</th><th class="num">Runs</th><th class="num">Best units/h</th><th>Last run</th><th></th></tr></thead><tbody></tbody></table></div>
+      <p class="lib-empty" id="libEmpty" hidden>No recipes yet. Plan a routine above, or import a routine.recipe.json you saved before.</p>
+      <p class="foot" id="libFoot">Ranking and best option are computed locally. Joule is only asked for patterns, and the same library is never analysed twice.</p>
     </section>
 
     <footer><span>INTERNAL – SAP and Partners Only</span><span id="footSrc">Source: SAP Autonomous Operations Twin · DES engine · your most recent run · Intelligence: Joule</span><span>Simulated data for demonstration purposes</span></footer>

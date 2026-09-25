@@ -284,4 +284,5 @@
 
   window.addEventListener("resize", () => Object.values(charts).forEach((chart) => chart.resize()));
   document.addEventListener("DOMContentLoaded", () => { $("#refresh").addEventListener("click", load); load(); });
+  document.addEventListener("analytics:refresh", () => load()); // a recipe run finished in the library
 })();
