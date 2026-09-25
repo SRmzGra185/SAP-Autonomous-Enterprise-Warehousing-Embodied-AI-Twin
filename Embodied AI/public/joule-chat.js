@@ -169,8 +169,8 @@ export function initJouleChat({ api, getScenario, runRecipe }) {
       const descriptor = await call('/api/joule/descriptor');
       if (disposed || !descriptor || descriptor.status !== 'CONNECTED' || typeof descriptor.model !== 'string') return;
       connected = true;
-      title.textContent = 'Joule · SAP AI Core'; badge.textContent = 'CONNECTED'; badge.classList.add('connected');
-      note.textContent = `Joule runs on ${descriptor.provider} (${descriptor.model}). Your goal is interpreted in natural language; only the explicit fields configure the four predefined routines, and Joule can only suggest values for them. Nothing executes from this chat; assisted replay still requires approval in the app. Do not enter credentials.`;
+      title.textContent = 'Joule'; badge.textContent = 'CONNECTED'; badge.classList.add('connected');
+      note.textContent = `Your goal is interpreted in natural language; only the explicit fields configure the four predefined routines, and Joule can only suggest values for them. Nothing executes from this chat; assisted replay still requires approval in the app. Do not enter credentials.`;
       ask.textContent = 'Ask Joule'; renderPrompts();
     } catch { /* stays NOT_CONNECTED */ }
   }

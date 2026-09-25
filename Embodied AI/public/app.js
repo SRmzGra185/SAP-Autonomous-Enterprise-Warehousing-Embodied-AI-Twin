@@ -1,6 +1,5 @@
 import { createMeshWorld } from "./webgl-world.js";
 import { createExecutionUI } from "./execution-ui.js";
-import { initConnectionsUI } from "./connections-ui.js";
 import { initExperimentsUI } from "./experiments-ui.js";
 import { initJouleChat } from "./joule-chat.js";
 import { rememberEdit, travelHistory, moveObject, setObjectCapacity, addTrail, buildObjectCatalog } from "./editor-core.js";
@@ -259,7 +258,7 @@ function renderInspector() {
         <div class="key-value"><span>Production writes</span><b style="color:var(--green)">Denied</b></div>
         <div class="key-value"><span>Edition</span><b style="color:var(--blue)">${state.editMode ? "Editable model" : "View only"}</b></div>
       </div>
-      <div class="inspector-section"><h3>External connection scope</h3><p>SAP BDC Connect · Joule</p><p>Local mock runtime. Joule NOT CONNECTED.</p><button class="secondary-button" data-operation="connections">Connection settings</button></div>
+      <div class="inspector-section"><h3>External connection scope</h3><p>SAP BDC Connect · Joule</p><p>Local mock runtime. Joule NOT CONNECTED.</p></div>
       <div class="inspector-section"><h3>Model composition</h3>
         <div class="key-value"><span>DES objects</span><b>${state.model.nodes.length}</b></div>
         <div class="key-value"><span>Connections</span><b>${state.model.edges.length}</b></div>
@@ -376,11 +375,11 @@ function interfaceContent(tool) {
     <p>Mock shared product: ${escapeHtml(scenario?.domain || "Asset Management")} operational context.</p>
     <dl><dt>Local contract</dt><dd>Scenario identity → routine steps → synthetic sensor inputs → approval decisions → recorded evidence.</dd><dt>Connection boundary</dt><dd>SAP BDC Connect shares context; Joule is the only other supported external connection. Neither is required for local simulation.</dd></dl>
     <p>These are local prototype contracts, not a live product catalog.</p>
-    <div class="operations-actions">${tool === "connect" ? operationButton("analytics", "✦ Joule analytics · scenario insights") : ""}${operationButton("connections", "Connection settings")}${operationButton("grafcet", "Inspect current routine")}</div>`;
+    <div class="operations-actions">${tool === "connect" ? operationButton("analytics", "✦ Joule analytics · scenario insights") : ""}${operationButton("grafcet", "Inspect current routine")}</div>`;
   if (tool === "agent") content = `
     <h4>Joule · NOT CONNECTED</h4><p>This action starts a bounded local mock plan. It does not call Joule or execute its recommendations.</p>
     <label for="workspace-agent-goal">Operations goal</label><textarea id="workspace-agent-goal" maxlength="2000" rows="3">${escapeHtml($("#agent-goal").value)}</textarea>
-    <div class="operations-actions">${operationButton("joule-chat", "Open chat & reusable routines")}${operationButton("agent-start", "Start local mock plan")}${operationButton("trace", "Open recorded trace")}${operationButton("connections", "Connection settings")}</div>
+    <div class="operations-actions">${operationButton("joule-chat", "Open chat & reusable routines")}${operationButton("agent-start", "Start local mock plan")}${operationButton("trace", "Open recorded trace")}</div>
     <h4>Latest local plan</h4><pre id="workspace-agent-plan">${escapeHtml(state.agentPlan ? JSON.stringify(state.agentPlan, null, 2) : "No completed local plan yet.")}</pre>`;
   if (tool === "approval") content = `
     <h4>Assisted execution</h4><p>Assisted mode pauses before each simulated action. Approve or reject the actual pending request in the twin. Live execution remains locked; shadow uses synthetic inputs.</p>
@@ -435,7 +434,6 @@ async function handleOperation(action) {
     return target;
   };
   if (action === "inspect") { const node = nodeById(state.selectedId); if (node) openObjectSubmenu(toolForNode(node), node); }
-  if (action === "connections") reveal("#connections-settings");
   if (action === "grafcet") reveal("#robot-lab");
   if (action === "runroutine") await runRobotRoutine();
   if (action === "agent-start") {
@@ -776,7 +774,7 @@ function h1Consume(event) {
   if (event.type === "job_failed") { h1SetGait("ERROR"); showToast(event.error || "Robot job failed."); }
   if (event.type === "h1_joule_answer") {
     const el = h1$("#h1-joule-answer"); el.classList.remove("pending");
-    el.textContent = event.provider && event.provider !== "mock" ? `Joule (${event.model}): ${event.answer}` : `Joule (local): ${event.answer}`;
+    el.textContent = event.provider && event.provider !== "mock" ? `Joule: ${event.answer}` : `Joule (local): ${event.answer}`;
     h1.plan = (event.steps || []).map((step) => ({ label: step.label, status: "pending" })); h1RenderPlan();
   }
 }
@@ -927,7 +925,7 @@ function consumeEvent(event) {
     // old stream never bounces the user away from the twin.
     if (state.currentJob === event.id) { logLine("analytics", "opening Joule analytics for this run…"); setTimeout(() => { window.location.assign("/analytics.html"); }, 900); }
   }
-  if (event.type === "orchestrator_analysis") logLine(plannerLabel(), event.provider && event.provider !== "mock" ? `analyzing with ${event.model} / ${event.effort}` : (event.analysis || event.message || "Preparing a bounded operations plan; Joule NOT CONNECTED"));
+  if (event.type === "orchestrator_analysis") logLine(plannerLabel(), event.provider && event.provider !== "mock" ? "Joule is analyzing the goal" : (event.analysis || event.message || "Preparing a bounded operations plan; Joule NOT CONNECTED"));
   if (event.type === "fallback_activated") logLine("fallback", `${event.from} → ${event.to}: ${event.reason}${event.detail ? ` (${event.detail})` : ""}`, true);
   if (event.type === "optimizer_baseline") logLine("optimizer", `baseline ${OPTIMIZER_LABELS[event.objective]}: ${optFmt(event.objective, event.metrics)} · ${event.source} proposals · seed ${event.seed}`);
   if (event.type === "optimizer_iteration") logLine("optimizer", `iteration ${event.iteration}/${event.iterations}: ${event.candidates} candidate${event.candidates === 1 ? "" : "s"} (${event.source})`);
@@ -1297,9 +1295,9 @@ function renderRibbon(tab) {
   const sets = {
     model: [["select", "↖", "Select"], ["trail", "⌁", "Trail"]],
     simulate: [["run", "▶", "Run"], ["realtime", "◉", "Paced playback"], ["monte", "∿", "Monte Carlo"], ["rewind", "↺", "Reset clock"], ["save", "▣", "Save Snapshot"]],
-    integrate: [["connections", "⌘", "Connection Settings"], ["connect", "◈", "SAP BDC Connect"], ["agent", "✦", "Joule"], ["analytics", "▤", "Joule Analytics"]],
+    integrate: [["connect", "◈", "SAP BDC Connect"], ["agent", "✦", "Joule"], ["analytics", "▤", "Joule Analytics"]],
     audit: [["approval", "⌑", "Human Approval"], ["evidence", "▤", "Evidence & Audit"], ["save", "▣", "Save Snapshot"]],
-    agent: [["agent", "✦", "Joule · Local Mock"], ["trace", "⇄", "Recorded Trace"], ["connections", "⌘", "Connection Settings"]],
+    agent: [["agent", "✦", "Joule · Local Mock"], ["trace", "⇄", "Recorded Trace"]],
     robot: [["robotlab", "◇", "Open Embodied AI Lab"], ["loadcell", "▣", "Connect Workcell"], ["stepgrafcet", "↦", "Next GRAFCET"], ["runroutine", "▶", "Run Routine"], ["shadow", "◉", "Shadow Mode"], ["save", "▣", "Save Snapshot"]],
     humanoid: [["humanoidlab", "◇", "Open Digital Twin Robotics"], ["h1train", "∿", "Train Policy"], ["h1deploy", "▶", "Deploy & Stand Up"], ["h1teleop", "↦", "Walk Forward"]]
   };
@@ -1326,7 +1324,7 @@ function handleRibbonAction(button) {
   if (tool) return tool === "select" ? showToast("Selection mode active.") : openObjectSubmenu(tool);
   if (command === "run" || command === "realtime" || command === "monte") { $("#simulation-mode").value = command === "monte" ? "monte-carlo" : command === "run" ? "fast" : command; return runSimulation(); }
   if (command === "rewind") { if(state.robotRunning || state.simulationRunning) return showToast("Finish the active run before resetting the display."); $("#clock-label").textContent = "t = 0.00 s"; $("#timeline-fill").style.width = "0%"; state.meshWorld?.setFlowState({running:false,queues:{},completedNodeIds:[]}); showToast("Playback display reset. Saved results and evidence are unchanged."); return; }
-  if (command === "connections" || command === "trace") return handleOperation(command);
+  if (command === "trace") return handleOperation(command);
 
   if (command === "analytics") { window.location.assign("/analytics.html"); return; }
   if (command === "robotlab") { document.querySelector("#robot-lab").scrollIntoView({ behavior: "smooth", block: "start" }); return showToast("Embodied AI Lab opened."); }
@@ -1473,12 +1471,6 @@ async function boot() {
   checkAnalyticsReady();
   const activeJobs = await api("/api/robot-routines/active");
   for (const job of activeJobs) { state.executionUI.started(job.id); watchJob(job.id, `/api/jobs/${job.id}/events`); }
-  try {
-    state.operationsScope = await api("/api/operations-scope");
-    $("#operations-scope").textContent = JSON.stringify(state.operationsScope, null, 2);
-  } catch (error) { $("#operations-scope").textContent = `Scope status unavailable: ${error.message}`; }
-  try { await initConnectionsUI({ api }); }
-  catch (error) { $("#connections-settings").textContent = `Connection settings unavailable: ${error.message}`; }
   try { state.experimentsUI = initExperimentsUI({
     api:async(path,options)=>{if(path==="/api/experiment-template") await state.saveQueue;return api(path,options);},
     getModel:()=>state.model,
