@@ -36,7 +36,8 @@ const state = {
   activeGrafcetStep: null,
   activeGrafcetTransition: null,
   grafcetVisited: new Set(),
-  robotManualIndex: 0
+  robotManualIndex: 0,
+  measuredKpis: null
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -251,7 +252,7 @@ function interfaceContent(tool) {
     <p>Mock shared product: ${escapeHtml(scenario?.domain || "Asset Management")} operational context.</p>
     <dl><dt>Local contract</dt><dd>Scenario identity → routine steps → synthetic sensor inputs → approval decisions → recorded evidence.</dd><dt>Connection boundary</dt><dd>SAP BDC Connect shares context; Joule is the only other supported external connection. Neither is required for local simulation.</dd></dl>
     <p>These are local prototype contracts, not a live product catalog.</p>
-    <div class="operations-actions">${operationButton("connections", "Connection settings")}${operationButton("grafcet", "Inspect current routine")}</div>`;
+    <div class="operations-actions">${tool === "connect" ? operationButton("analytics", "✦ Joule analytics · scenario insights") : ""}${operationButton("connections", "Connection settings")}${operationButton("grafcet", "Inspect current routine")}</div>`;
   if (tool === "agent") content = `
     <h4>Joule · NOT CONNECTED</h4><p>This action starts a bounded local mock plan. It does not call Joule or execute its recommendations.</p>
     <label for="workspace-agent-goal">Operations goal</label><textarea id="workspace-agent-goal" maxlength="2000" rows="3">${escapeHtml($("#agent-goal").value)}</textarea>
@@ -317,6 +318,7 @@ async function handleOperation(action) {
   }
   if (action === "trace") reveal(".console-panel");
   if (action === "joule-chat") reveal("#joule-chat");
+  if (action === "analytics") { window.location.assign("/analytics.html"); return; }
   if (action === "timeline") reveal("#event-timeline");
   if (action === "export") $("#mission-export").click();
   if (action === "audit") {
@@ -431,6 +433,184 @@ function updateMetrics(summary) {
   $("#metric-cycle").textContent = value(summary.averageCycle);
   $("#metric-p95").textContent = value(summary.p95Cycle);
   $("#metric-breaches").textContent = "Separate proof";
+  $$(".metric-cards .metric-card").forEach((card) => { card.classList.remove("flash"); void card.offsetWidth; card.classList.add("flash"); });
+}
+
+const aiCoreConnected = () => state.runtime?.providerId === "aicore" || state.runtime?.providerId === "anthropic";
+const plannerLabel = () => aiCoreConnected() ? "Joule · AI Core" : "local mock planner";
+const agentButtonLabel = () => aiCoreConnected() ? "Delegate to Joule" : "Start local plan";
+const optEsc = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[char]));
+const OPTIMIZER_LABELS = { throughput: "Throughput", p95Cycle: "P95 cycle", averageCycle: "Avg cycle" };
+const optFmt = (objective, metrics) => { if (!metrics) return "—"; if (objective === "throughput") return `${Math.round((metrics.throughputPerHour ?? metrics.throughput * 3600) || 0)}/h`; const value = metrics[objective]; return Number.isFinite(value) ? `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })} s` : "—"; };
+
+async function runOptimization() {
+  if (state.robotRunning) return showToast("Finish or stop the robot routine before optimizing the same twin.");
+  if (!state.model) return;
+  const objective = $("#optimizer-objective").value, iterations = Number($("#optimizer-iterations").value || 3);
+  state.optimizerObjective = objective; state.optimizerProposal = null; state.optimizerApplied = null;
+  $("#optimizer-result").classList.add("hidden");
+  const button = $("#run-optimizer"); button.disabled = true; button.textContent = "Optimizing…";
+  logLine("optimizer", `propose → simulate → score loop queued for ${OPTIMIZER_LABELS[objective]} (${iterations} iterations · ${aiCoreConnected() ? "SAP AI Core" : "heuristic"})`);
+  try {
+    const job = await api("/api/optimizations", { method: "POST", body: JSON.stringify({ objective, iterations, candidates: 2, entities: Number($("#entity-count").value || 24), seed: 42 }) });
+    logLine("worker", `${job.jobId} accepted as background job`); watchJob(job.jobId, job.events);
+  } catch (error) { button.disabled = false; button.textContent = "✦ Optimize with AI"; showToast(error.message || "Optimization could not start."); }
+}
+
+function renderOptimizerResult(result) {
+  state.optimizerLast = result; state.optimizerApplied = null;
+  const button = $("#run-optimizer"); button.disabled = false; button.textContent = "✦ Optimize with AI";
+  state.optimizerProposal = result.proposedModel || null;
+  const label = OPTIMIZER_LABELS[result.objective] || result.objective, gain = result.improvementPct;
+  const applied = (result.applied || []).map((item) => `<li><b>${optEsc(item.label)}</b><span>${item.ops.map((op) => optEsc(op.op === "set_capacity" ? `${op.nodeId} capacity → ${op.value}` : op.op === "set_service" ? `${op.nodeId} service → ${op.value} s` : `${op.nodeId} ⇄ ${op.otherNodeId}`)).join(" · ")}</span></li>`).join("");
+  $("#optimizer-result").innerHTML = `
+    <div class="optimizer-summary"><div><span class="eyebrow">${result.source === "llm" ? "LLM-PROPOSED · SAP AI CORE" : "HEURISTIC"} · ${result.evaluated} SIMULATIONS</span><strong>${label}: ${optFmt(result.objective, result.baseline)} → ${optFmt(result.objective, result.best)}</strong><small>seed-fixed DES · ${result.iterations} iteration${result.iterations === 1 ? "" : "s"}</small></div><b class="${gain > 0 ? "gain" : "flat"}">${gain > 0 ? "+" : ""}${optEsc(gain)}%</b></div>
+    ${applied ? `<ul class="optimizer-ops">${applied}</ul>` : `<p class="optimizer-empty">No candidate beat the baseline within the budget. Raise iterations or the capacity budget.</p>`}
+    <div class="optimizer-actions">${result.proposedModel ? `<button id="optimizer-apply" class="primary-button">Apply proposal to model</button>` : ""}<button id="optimizer-dismiss" class="secondary-button">Dismiss</button></div>`;
+  $("#optimizer-result").classList.remove("hidden");
+  $("#optimizer-apply")?.addEventListener("click", applyOptimizerProposal);
+  $("#optimizer-dismiss").addEventListener("click", () => { $("#optimizer-result").classList.add("hidden"); state.optimizerProposal = null; });
+  logLine("optimizer", gain > 0 ? `best ${label} ${optFmt(result.objective, result.best)} (+${gain}%) with ${result.applied.length} change${result.applied.length === 1 ? "" : "s"}; awaiting your approval to apply` : "no improvement found within budget");
+}
+
+async function applyOptimizerProposal() {
+  if (!state.optimizerProposal) return;
+  const button = $("#optimizer-apply"); button.disabled = true; button.textContent = "Applying…";
+  try {
+    const response = await api("/api/model", { method: "POST", body: JSON.stringify(state.optimizerProposal) });
+    state.model = response.model; renderModel(); renderInspector(); render3d();
+    state.optimizerProposal = null;
+    const objective = state.optimizerLast?.objective || state.optimizerObjective || "throughput";
+    state.optimizerApplied = { objective, predicted: state.optimizerLast?.best ?? null };
+    const actions = $("#optimizer-result .optimizer-actions");
+    if (actions) actions.innerHTML = `<span class="optimizer-status running">✓ Applied · running confirmation experiment…</span><button id="optimizer-dismiss" class="secondary-button">Dismiss</button>`;
+    $("#optimizer-dismiss")?.addEventListener("click", () => { $("#optimizer-result").classList.add("hidden"); state.optimizerApplied = null; });
+    logLine("optimizer", "proposal applied to the tenant model; running confirmation experiment");
+    showToast("Optimized layout applied. Confirming with an experiment…");
+    runSimulation();
+  } catch (error) { button.disabled = false; button.textContent = "Apply proposal to model"; showToast(error.message || "Could not apply the proposal."); }
+}
+
+function confirmOptimizerResult(summary) {
+  const applied = state.optimizerApplied; if (!applied) return;
+  state.optimizerApplied = null;
+  const status = $("#optimizer-result .optimizer-status"); if (!status) return;
+  const label = OPTIMIZER_LABELS[applied.objective] || applied.objective, actual = optFmt(applied.objective, summary), predicted = applied.predicted ? optFmt(applied.objective, applied.predicted) : null;
+  status.className = "optimizer-status done";
+  status.textContent = `✓ Confirmed by simulation · ${label} ${actual}${predicted ? ` (predicted ${predicted})` : ""}`;
+  logLine("optimizer", `confirmation experiment: ${label} ${actual}${predicted ? ` vs predicted ${predicted}` : ""}`);
+}
+
+// ---- Digital Twin Robotics · Unitree H1 humanoid module -----------------------------------
+// Self-contained: its own status poll, SSE watcher and small SVG reward chart. Reuses the same
+// Isaac executor/bridge as the warehouse Routine Lab but never touches state.robotRunning or
+// the GRAFCET/mesh-world state, so the two labs cannot interfere with each other.
+const h1 = { source: null, trainPoints: [], running: false };
+
+function h1Log(caption) { $("#h1-snapshot-caption").textContent = caption; }
+
+function h1SetGait(label) { $("#h1-gait-badge").textContent = label; }
+
+function h1Watch(jobId) {
+  h1.source?.close();
+  const source = new EventSource(`/api/jobs/${jobId}/events`);
+  h1.source = source; h1.running = true;
+  let lastSequence = 0;
+  const types = ["job_started", "job_complete", "job_failed", "job_cancelled", "fallback_activated", "h1_train_started", "h1_train_metric", "h1_train_complete", "h1_deploy_started", "h1_deploy_phase", "h1_deploy_ready", "h1_teleop_started", "h1_teleop_step", "h1_teleop_complete", "h1_log", "h1_snapshot"];
+  for (const type of types) source.addEventListener(type, (event) => {
+    const payload = JSON.parse(event.data);
+    if (payload.sequence && payload.sequence <= lastSequence) return;
+    lastSequence = payload.sequence || lastSequence;
+    h1Consume(payload);
+    const terminal = ["job_complete", "job_failed", "job_cancelled", "h1_train_complete", "h1_deploy_ready", "h1_deploy_complete", "h1_teleop_complete"];
+    if (terminal.includes(type)) { source.close(); h1.source = null; h1.running = false; }
+  });
+  source.onerror = () => { if (h1.running) h1Log("Event stream interrupted; reconnecting…"); };
+}
+
+function h1Consume(event) {
+  if (event.type === "h1_train_started") { h1.trainPoints = []; h1.pose = { x: 0, heading: 0 }; h1.hasIsaacFrame = false; h1DrawReward(); $("#h1-train-status").textContent = `Training · 0 / ${event.iterations} iterations${event.executor ? "" : " (local simulation)"}`; h1SetGait("TRAINING"); h1Log(`Isaac Lab · ${event.task} · ${event.numEnvs} parallel envs`); }
+  if (event.type === "h1_train_metric") { h1.trainPoints.push({ iteration: event.iteration, reward: event.reward }); h1DrawReward(); $("#h1-train-status").textContent = `Training · ${event.iteration} / ${event.totalIterations} iterations`; $("#h1-train-metric").textContent = `reward ${event.reward} · episode length ${event.episodeLength}`; }
+  if (event.type === "h1_train_complete" || event.type === "h1_train_complete_isaac") { $("#h1-train-status").textContent = "Training complete"; $("#h1-checkpoint").textContent = event.checkpoint?.label || "trained checkpoint"; h1SetGait("STANDBY"); showToast(`H1 policy trained · reward ${event.reward}`); }
+  if (event.type === "h1_deploy_started") { h1.hasIsaacFrame = false; h1SetGait("DEPLOYING"); h1Log(`Loading ${event.checkpoint?.label || "checkpoint"} · ${event.terrain} terrain`); $("#h1-checkpoint").textContent = event.checkpoint?.label || "—"; }
+  if (event.type === "h1_deploy_phase") { h1Log(event.label); }
+  if (event.type === "h1_deploy_ready" || event.type === "h1_deploy_complete") { h1SetGait("READY"); h1Log("Locomotion policy holding balance"); showToast("H1 deployed and balancing."); }
+  if (event.type === "h1_teleop_started") { h1SetGait("WALKING"); }
+  if (event.type === "h1_teleop_step") { h1.pose = event.pose; $("#h1-pose").textContent = `x ${event.pose.x} · y ${event.pose.y} · heading ${Math.round((event.pose.heading * 180) / Math.PI)}°`; const gait = event.gait === "walk" ? "WALKING" : event.gait === "turn" ? "TURNING" : "STANDING"; h1SetGait(gait); }
+  if (event.type === "h1_teleop_complete") h1SetGait("READY");
+  if (event.type === "h1_snapshot") { h1.hasIsaacFrame = true; const fig = $("#h1-snapshot"); fig.classList.remove("hidden"); fig.classList.add("has-frame"); $("#h1-snapshot-img").src = event.image; h1Log(event.caption || "Robot camera"); }
+  if (event.type === "h1_log") h1Log(event.message);
+  if (event.type === "fallback_activated") h1Log(event.message);
+  if (event.type === "job_failed") { h1SetGait("ERROR"); showToast(event.error || "H1 job failed."); }
+  if (event.type === "h1_joule_answer") { const el = $("#h1-joule-answer"); el.classList.remove("pending"); el.textContent = event.provider && event.provider !== "mock" ? `Joule (${event.model}): ${event.answer}` : `Joule (local): ${event.answer}`; }
+}
+
+async function h1RunJob(path, body, button) {
+  if (h1.running) return showToast("Finish or stop the active H1 job first.");
+  if (button) { button.disabled = true; }
+  try {
+    const job = await api(path, { method: "POST", body: JSON.stringify(body) });
+    h1Watch(job.jobId);
+  } catch (error) {
+    showToast(error.message || "Could not start the H1 job.");
+  } finally {
+    if (button) setTimeout(() => { button.disabled = false; }, 800);
+  }
+}
+
+function runH1Train() { return h1RunJob("/api/humanoid/train", { iterations: Number($("#h1-train-iterations").value || 300), numEnvs: Number($("#h1-train-envs").value || 2048) }, $("#h1-train-run")); }
+function runH1Deploy() { return h1RunJob("/api/humanoid/deploy", { checkpoint: $("#h1-deploy-checkpoint").value, terrain: $("#h1-deploy-terrain").value }, $("#h1-deploy-run")); }
+function runH1Teleop(command) { return h1RunJob("/api/humanoid/teleop", command, null); }
+function runH1Joule(goal) {
+  const trimmed = goal.trim();
+  if (!trimmed) return showToast("Tell the H1 what to do first.");
+  const answerEl = $("#h1-joule-answer"); answerEl.classList.add("pending"); answerEl.textContent = "Joule is thinking…";
+  return h1RunJob("/api/humanoid/joule", { goal: trimmed }, $("#h1-joule-run"));
+}
+
+async function h1RefreshStatus() {
+  try {
+    const status = await api("/api/humanoid/descriptor");
+    $("#h1-isaac-strip").classList.toggle("connected", Boolean(status.connected));
+    $("#h1-isaac-status").textContent = `Isaac Sim · ${status.connected ? "CONNECTED" : "OFFLINE"}`;
+    $("#h1-isaac-executor").textContent = status.connected ? `${status.executor.name}${status.executor.dryRun ? " · dry run" : ""}` : "no executor connected";
+    if (!h1.running) {
+      const active = await api("/api/humanoid/active");
+      if (active.length) h1Watch(active[0].id);
+    }
+  } catch { /* informational */ }
+}
+
+function initHumanoidLab() {
+  $("#h1-train-run").addEventListener("click", runH1Train);
+  $("#h1-deploy-run").addEventListener("click", runH1Deploy);
+  const MOVES = { forward: { vx: 0.6, vy: 0, yaw: 0 }, backward: { vx: -0.4, vy: 0, yaw: 0 }, left: { vx: 0, vy: 0, yaw: 0.6 }, right: { vx: 0, vy: 0, yaw: -0.6 }, stop: { vx: 0, vy: 0, yaw: 0, durationMs: 500 } };
+  $$("[data-h1-move]").forEach((button) => button.addEventListener("click", () => runH1Teleop({ ...MOVES[button.dataset.h1Move], durationMs: MOVES[button.dataset.h1Move].durationMs || 4000 })));
+  h1.pose = { x: 0, heading: 0 }; h1.hasIsaacFrame = false;
+  // Remembered per-browser only (localStorage): the Brev "/viewer" URL for this session's Isaac Sim instance.
+  const urlInput = $("#h1-viewer-url"), link = $("#h1-viewer-link");
+  const syncViewerLink = () => {
+    const url = urlInput.value.trim();
+    if (url) { link.href = url; link.classList.remove("disabled"); } else { link.href = "#"; link.classList.add("disabled"); }
+  };
+  try { urlInput.value = localStorage.getItem("h1-isaac-viewer-url") || ""; } catch { /* private mode */ }
+  syncViewerLink();
+  urlInput.addEventListener("input", () => { try { localStorage.setItem("h1-isaac-viewer-url", urlInput.value.trim()); } catch { /* private mode */ } syncViewerLink(); });
+
+  const goalInput = $("#h1-joule-goal");
+  $("#h1-joule-run").addEventListener("click", () => runH1Joule(goalInput.value));
+  goalInput.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); runH1Joule(goalInput.value); } });
+  api("/api/humanoid/joule/prompts").then((data) => {
+    const wrap = $("#h1-joule-presets");
+    for (const prompt of data.prompts || []) {
+      const button = document.createElement("button");
+      button.type = "button"; button.textContent = prompt;
+      button.addEventListener("click", () => { goalInput.value = prompt; runH1Joule(prompt); });
+      wrap.appendChild(button);
+    }
+  }).catch(() => { /* presets are a convenience; the free-text input still works */ });
+
+  h1RefreshStatus(); setInterval(h1RefreshStatus, 5000);
 }
 
 function consumeEvent(event) {
@@ -451,8 +631,18 @@ function consumeEvent(event) {
     if (!state.robotRunning) state.meshWorld?.setFlowState({ running: false });
     updateMetrics(event.summary); $("#model-status").textContent = "Experiment complete"; $("#run-simulation").disabled = false;
     logLine("orchestrator", `completed ${event.summary.completed} entities; p95 cycle ${event.summary.p95Cycle}`);
+    confirmOptimizerResult(event.summary);
   }
-  if (event.type === "orchestrator_analysis") logLine("local mock planner", event.analysis || event.message || "Preparing a bounded operations plan; Joule NOT CONNECTED");
+  if (event.type === "orchestrator_analysis") logLine(plannerLabel(), event.provider && event.provider !== "mock" ? `analyzing with ${event.model} / ${event.effort}` : (event.analysis || event.message || "Preparing a bounded operations plan; Joule NOT CONNECTED"));
+  if (event.type === "fallback_activated") logLine("fallback", `${event.from} → ${event.to}: ${event.reason}${event.detail ? ` (${event.detail})` : ""}`, true);
+  if (event.type === "optimizer_baseline") logLine("optimizer", `baseline ${OPTIMIZER_LABELS[event.objective]}: ${optFmt(event.objective, event.metrics)} · ${event.source} proposals · seed ${event.seed}`);
+  if (event.type === "optimizer_iteration") logLine("optimizer", `iteration ${event.iteration}/${event.iterations}: ${event.candidates} candidate${event.candidates === 1 ? "" : "s"} (${event.source})`);
+  if (event.type === "optimizer_candidate") {
+    const objective = state.optimizerObjective || "throughput";
+    if (event.reason) logLine("optimizer ✗", `${event.label}: rejected — ${event.reason}`, true);
+    else logLine(event.accepted ? "optimizer ✓" : "optimizer ·", `${event.label}: ${OPTIMIZER_LABELS[objective]} ${optFmt(objective, event.metrics)} (${event.improvementPct > 0 ? "+" : ""}${event.improvementPct}% vs baseline)${event.accepted ? " → new best" : ""}`);
+  }
+  if (event.type === "optimizer_complete") renderOptimizerResult(event);
   if (event.type === "specialist_launched") logLine(event.specialist, `step ${event.step}: ${event.objective}`);
   if (event.type === "provider_status") logLine("provider", `${event.providerId}: ${event.status}`);
   if (event.type === "robot_routine_started") {
@@ -493,19 +683,23 @@ function consumeEvent(event) {
     button.disabled = false; button.textContent = "Run routine";
     $("#model-status").textContent = `${event.cycles} robot cycle${event.cycles === 1 ? "" : "s"} complete`;
     logLine("robot controller", `${event.cycles} simulated cycle${event.cycles === 1 ? "" : "s"} completed`);
+    if (state.currentJob) refreshMeasuredKpis(state.currentJob);
   }
 
 
   if (event.type === "job_complete" && event.result?.plan) {
     state.agentPlan = event.result;
     if ($("#workspace-agent-plan")) $("#workspace-agent-plan").textContent = JSON.stringify(state.agentPlan, null, 2);
-    logLine("local mock planner", event.result.summary || `${event.result.plan.length} local plan steps recorded. Joule NOT CONNECTED.`);
-    const button = $("#run-agent-task"); button.disabled = false; button.textContent = "Start local plan";
+    logLine(plannerLabel(), event.result.summary || `${event.result.plan.length} local plan steps recorded. Joule NOT CONNECTED.`);
+    for (const risk of event.result.risks || []) logLine("risk", risk, true);
+    for (const action of event.result.nextActions || []) logLine("next action", action);
+    const button = $("#run-agent-task"); button.disabled = false; button.textContent = agentButtonLabel();
   }
   if (event.type === "job_failed") { if (state.currentJobKind === "simulation") { $("#model-status").textContent = "Experiment failed"; $("#run-simulation").disabled = false; } logLine("system", event.error, true); }
   if (event.type === "job_failed") {
-    const agent = $("#run-agent-task"), robot = $("#run-robot-routine");
-    if (agent) { agent.disabled = false; agent.textContent = "Start local plan"; }
+    const agent = $("#run-agent-task"), robot = $("#run-robot-routine"), optimizer = $("#run-optimizer");
+    if (agent) { agent.disabled = false; agent.textContent = agentButtonLabel(); }
+    if (optimizer) { optimizer.disabled = false; optimizer.textContent = "✦ Optimize with AI"; }
     if (robot && state.currentJobKind === "robot_routine") { robot.disabled = false; robot.textContent = "Run routine"; state.meshWorld?.setFlowState({ running: false }); }
   }
   if (event.type === "approval_required") logLine("human approval", `${event.stepId}: waiting for an explicit operator decision`, true);
@@ -520,7 +714,7 @@ function watchJob(jobId, endpoint) {
   state.sources.set(jobId, source);
   let lastSequence = 0;
   source.onmessage = (event) => consumeEvent(JSON.parse(event.data));
-  ["job_started", "service_start", "service_complete", "arrival", "transfer", "entity_complete", "audit_breach", "audit_pass", "monte_carlo_run", "simulation_complete", "job_complete", "job_failed", "connection_decision", "orchestrator_analysis", "specialist_launched", "provider_status", "robot_routine_started", "grafcet_step_active", "sensor_sample", "robot_command", "grafcet_transition_fired", "robot_routine_complete"].forEach((type) => {
+  ["job_started", "service_start", "service_complete", "arrival", "transfer", "entity_complete", "audit_breach", "audit_pass", "monte_carlo_run", "simulation_complete", "job_complete", "job_failed", "connection_decision", "orchestrator_analysis", "specialist_launched", "provider_status", "robot_routine_started", "grafcet_step_active", "sensor_sample", "robot_command", "grafcet_transition_fired", "robot_routine_complete", "fallback_activated", "optimizer_baseline", "optimizer_iteration", "optimizer_candidate", "optimizer_complete"].forEach((type) => {
     source.addEventListener(type, (event) => {
       const payload = JSON.parse(event.data);
       if (payload.sequence && payload.sequence <= lastSequence) return;
@@ -561,13 +755,13 @@ async function runAgentTask() {
   if (!goal) return showToast("Describe a bounded goal first.");
   const button = $("#run-agent-task"); button.disabled = true; button.textContent = "Planning locally…";
   state.agentPlan = null;
-  if ($("#workspace-agent-plan")) $("#workspace-agent-plan").textContent = "Local mock plan pending. Joule NOT CONNECTED.";
+  if ($("#workspace-agent-plan")) $("#workspace-agent-plan").textContent = aiCoreConnected() ? "Joule plan pending · SAP AI Core." : "Local mock plan pending. Joule NOT CONNECTED.";
   try {
     const job = await api("/api/agent/tasks", { method: "POST", body: JSON.stringify({ goal }) });
-    logLine("local mock planner", `queued as ${job.jobId}; Joule NOT CONNECTED`);
+    logLine(plannerLabel(), aiCoreConnected() ? `queued as ${job.jobId} · ${state.runtime.orchestrator} on SAP AI Core` : `queued as ${job.jobId}; Joule NOT CONNECTED`);
     watchJob(job.jobId, job.events);
   } catch (error) {
-    button.disabled = false; button.textContent = "Start local plan";
+    button.disabled = false; button.textContent = agentButtonLabel();
     logLine("local mock planner", error.message, true); showToast(error.message);
     if ($("#workspace-agent-plan")) $("#workspace-agent-plan").textContent = `Plan failed: ${error.message}`;
   }
@@ -645,6 +839,31 @@ function setGrafcetActive(stepId, transitionId = null) {
   if (modelNode) { state.selectedId = modelNode.id; state.meshWorld?.setSelected(modelNode.id); renderInspector(); }
 }
 
+const MEASURED_KPI_LABEL = {
+  "Picking and order cycle": (kpis) => kpis.pickingAndOrderCycle && `task→picking ${kpis.pickingAndOrderCycle.taskToPickingSeconds ?? "—"}s · order→dispatch ${kpis.pickingAndOrderCycle.orderToDispatchSeconds ?? "—"}s`,
+  "Queue and dock dwell": (kpis) => kpis.queueAndDockDwell && `rack dwell ${kpis.queueAndDockDwell.rackDwellSeconds ?? "—"}s · dock dwell ${kpis.queueAndDockDwell.dockDwellSeconds ?? "—"}s`
+};
+
+function renderKpiPanel(scenario) {
+  let kpiPanel = $("#routine-kpi-profile");
+  if (!kpiPanel) { kpiPanel = document.createElement("details"); kpiPanel.id = "routine-kpi-profile"; kpiPanel.className = "operations-scope"; $("#grafcet-detail").after(kpiPanel); }
+  const kpis = state.measuredKpis?.scenarioId === scenario.id ? state.measuredKpis : null;
+  kpiPanel.innerHTML = `<summary>KPI instrumentation · ${escapeHtml(scenario.domain)}</summary><p>Required inputs, not measured results. Use Industrial timing experiments for calculations supported by supplied data.</p><ul>${(scenario.kpiProfile?.metrics || []).map((metric) => {
+    const measured = kpis && MEASURED_KPI_LABEL[metric.name]?.(kpis);
+    return `<li><strong>${escapeHtml(metric.name)}</strong>: ${escapeHtml(metric.definition)}<br><small>Requires: ${escapeHtml(metric.requiredInputs)}</small>${measured ? `<br><strong class="measured">Measured: ${escapeHtml(measured)}</strong>` : ""}</li>`;
+  }).join("")}</ul>`;
+  return kpiPanel;
+}
+
+async function refreshMeasuredKpis(jobId) {
+  try {
+    state.measuredKpis = await api(`/api/robot-routines/${jobId}/kpis`);
+  } catch {
+    state.measuredKpis = null; // 404 = this scenario has no measurable KPIs yet; not an error
+  }
+  if (state.activeRobotScenario) renderKpiPanel(state.activeRobotScenario);
+}
+
 function selectRobotScenario(id) {
   if (state.robotRunning) return showToast("Finish or stop the routine before changing the showcase.");
   const scenario = state.robotScenarios.find((item) => item.id === id);
@@ -660,9 +879,7 @@ function selectRobotScenario(id) {
   $("#routine-code").textContent = routineCodeFor(scenario);
   renderRobotBindings(scenario);
   renderGrafcet(scenario);
-  let kpiPanel = $("#routine-kpi-profile");
-  if (!kpiPanel) { kpiPanel = document.createElement("details"); kpiPanel.id = "routine-kpi-profile"; kpiPanel.className = "operations-scope"; $("#grafcet-detail").after(kpiPanel); }
-  kpiPanel.innerHTML = `<summary>KPI instrumentation · ${escapeHtml(scenario.domain)}</summary><p>Required inputs, not measured results. Use Industrial timing experiments for calculations supported by supplied data.</p><ul>${(scenario.kpiProfile?.metrics || []).map(metric => `<li><strong>${escapeHtml(metric.name)}</strong>: ${escapeHtml(metric.definition)}<br><small>Requires: ${escapeHtml(metric.requiredInputs)}</small></li>`).join("")}</ul>`;
+  const kpiPanel = renderKpiPanel(scenario);
   let governance = $("#routine-governance-profile");
   if (!governance) { governance = document.createElement("details"); governance.id = "routine-governance-profile"; governance.className = "operations-scope"; kpiPanel.after(governance); }
   governance.innerHTML = `<summary>Safety & governance · reference mapping, NOT certification</summary><p>${escapeHtml(scenario.governance?.robotBoundary)}</p><p>${escapeHtml(scenario.governance?.transportBoundary)}</p><ul>${(scenario.governance?.standards || []).map(ref => `<li>${escapeHtml(ref.code)} — ${escapeHtml(ref.purpose)} <a href="${escapeHtml(ref.url)}" target="_blank" rel="noopener noreferrer">Official scope</a></li>`).join("")}</ul><p>Live commands remain blocked. Qualified integrator review and local safety controls are required.</p>`;
@@ -765,10 +982,11 @@ function renderRibbon(tab) {
   const sets = {
     model: [["select", "↖", "Select"], ["connect", "＋", "BDC Connect"], ["context", "◈", "Operations Context"], ["physical", "▣", "Workcell"], ["approval", "⌑", "Approval"], ["save", "▣", "Save Snapshot"], ["undo", "↶", "Undo"], ["redo", "↷", "Redo"]],
     simulate: [["select", "↖", "Select"], ["run", "▶", "Run"], ["realtime", "◉", "Real-time"], ["monte", "∿", "Monte Carlo"], ["rewind", "↺", "Reset clock"], ["save", "▣", "Save Snapshot"]],
-    integrate: [["connections", "⌘", "Connection Settings"], ["connect", "◈", "SAP BDC Connect"], ["agent", "✦", "Joule"]],
+    integrate: [["connections", "⌘", "Connection Settings"], ["connect", "◈", "SAP BDC Connect"], ["agent", "✦", "Joule"], ["analytics", "▤", "Joule Analytics"]],
     audit: [["approval", "⌑", "Human Approval"], ["evidence", "▤", "Evidence & Audit"], ["save", "▣", "Save Snapshot"]],
     agent: [["agent", "✦", "Joule · Local Mock"], ["trace", "⇄", "Recorded Trace"], ["connections", "⌘", "Connection Settings"]],
-    robot: [["robotlab", "◇", "Open Embodied AI Lab"], ["loadcell", "▣", "Connect Workcell"], ["stepgrafcet", "↦", "Next GRAFCET"], ["runroutine", "▶", "Run Routine"], ["shadow", "◉", "Shadow Mode"], ["save", "▣", "Save Snapshot"]]
+    robot: [["robotlab", "◇", "Open Embodied AI Lab"], ["loadcell", "▣", "Connect Workcell"], ["stepgrafcet", "↦", "Next GRAFCET"], ["runroutine", "▶", "Run Routine"], ["shadow", "◉", "Shadow Mode"], ["save", "▣", "Save Snapshot"]],
+    humanoid: [["humanoidlab", "◇", "Open Digital Twin Robotics"], ["h1train", "∿", "Train Policy"], ["h1deploy", "▶", "Deploy & Stand Up"], ["h1teleop", "↦", "Walk Forward"]]
   };
   $("#ribbon-tools").replaceChildren(...sets[tab].map(([id, glyph, label]) => {
     const button = document.createElement("button"); button.className = "tool-button"; button.dataset.tool = (id === "select" || Boolean(objectDefinitions[id])) ? id : ""; button.dataset.command = button.dataset.tool ? "" : id; button.innerHTML = `${glyph}<span>${label}</span>`; return button;
@@ -783,11 +1001,16 @@ function handleRibbonAction(button) {
   if (command === "rewind") { $("#clock-label").textContent = "t = 0.00"; $("#timeline-fill").style.width = "0%"; showToast("Simulation clock reset."); return; }
   if (command === "connections" || command === "trace") return handleOperation(command);
 
+  if (command === "analytics") { window.location.assign("/analytics.html"); return; }
   if (command === "robotlab") { document.querySelector("#robot-lab").scrollIntoView({ behavior: "smooth", block: "start" }); return showToast("Embodied AI Lab opened."); }
   if (command === "loadcell") return loadRobotCell();
   if (command === "stepgrafcet") return advanceRobotRoutine();
   if (command === "runroutine") return runRobotRoutine();
   if (command === "shadow") { if (state.robotRunning) return; $("#robot-mode").value = "shadow"; $("#mission-mode").value = "shadow"; document.querySelector("#robot-lab").scrollIntoView({ behavior: "smooth", block: "start" }); return showToast("Shadow mode selected: synthetic inputs only, physical commands blocked."); }
+  if (command === "humanoidlab") { $("#humanoid-lab").classList.remove("hidden"); document.querySelector("#humanoid-lab").scrollIntoView({ behavior: "smooth", block: "start" }); return showToast("Digital Twin Robotics opened."); }
+  if (command === "h1train") { $("#humanoid-lab").classList.remove("hidden"); document.querySelector("#humanoid-lab").scrollIntoView({ behavior: "smooth", block: "start" }); return runH1Train(); }
+  if (command === "h1deploy") { $("#humanoid-lab").classList.remove("hidden"); document.querySelector("#humanoid-lab").scrollIntoView({ behavior: "smooth", block: "start" }); return runH1Deploy(); }
+  if (command === "h1teleop") { $("#humanoid-lab").classList.remove("hidden"); document.querySelector("#humanoid-lab").scrollIntoView({ behavior: "smooth", block: "start" }); return runH1Teleop({ vx: 0.6, vy: 0, yaw: 0, durationMs: 4000 }); }
   if (command === "save") return saveModel(true);
   if (command === "undo") return undo();
   if (command === "redo") return redo();
@@ -829,6 +1052,10 @@ async function boot() {
   renderRibbon("model"); attachOrbitControls();
   $("#run-simulation").addEventListener("click", runSimulation);
   $("#run-agent-task").addEventListener("click", runAgentTask);
+  $("#run-optimizer")?.addEventListener("click", runOptimization);
+  try { state.runtime = await api("/api/runtime"); } catch { state.runtime = null; }
+  $("#run-agent-task").textContent = agentButtonLabel();
+  if (aiCoreConnected()) logLine("system", `Joule connected: ${state.runtime.provider} · ${state.runtime.orchestrator}`);
   $("#load-robot-cell").addEventListener("click", loadRobotCell);
   $("#step-robot-routine").addEventListener("click", advanceRobotRoutine);
   $("#run-robot-routine").addEventListener("click", runRobotRoutine);
@@ -854,6 +1081,18 @@ async function boot() {
   });
   $("#agent-goal").addEventListener("keydown", (event) => { if (event.key === "Enter") runAgentTask(); });
   $("#guide-close").addEventListener("click", () => $("#guide-panel").classList.add("hidden"));
+  const introPanel = $("#intro-panel"), introVideo = $("#intro-video");
+  const openIntro = () => { introPanel.classList.remove("hidden"); try { localStorage.setItem("twin-intro-seen", "1"); } catch {} };
+  const closeIntro = () => { introPanel.classList.add("hidden"); introVideo.pause(); };
+  $("#intro-close").addEventListener("click", closeIntro);
+  $("#intro-skip").addEventListener("click", closeIntro);
+  $("#intro-start").addEventListener("click", () => introVideo.play().catch(() => {}));
+  introVideo.addEventListener("play", () => introPanel.classList.add("playing"));
+  introVideo.addEventListener("ended", () => setTimeout(closeIntro, 900));
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !introPanel.classList.contains("hidden")) closeIntro(); });
+  window.openIntro = openIntro;
+  let introSeen = true; try { introSeen = localStorage.getItem("twin-intro-seen") === "1"; } catch {}
+  if (!introSeen && !new URLSearchParams(location.search).has("nointro")) openIntro();
   $("#example-runbook-close").addEventListener("click", () => $("#example-runbook").classList.add("hidden"));
   $("#runbook-steps").addEventListener("click", (event) => { const action = event.target.closest("[data-runbook-action]")?.dataset.runbookAction; if (action) runExampleAction(action); });
   $$("[data-view]").forEach((button) => button.addEventListener("click", () => changeView(button.dataset.view)));
@@ -878,12 +1117,14 @@ async function boot() {
     if (command === "new") { state.history.push(snapshotModel()); state.future = []; state.model = { id: `model-${Date.now()}`, name: "Untitled SAP Embodied AI Scenario", version: "0.5.0-embodied-ai", nodes: [], edges: [] }; state.selectedId = null; renderModel(); renderInspector(); await saveModel(false); return showToast("New editable model created."); }
     if (command === "open") { state.model = await api("/api/model"); state.selectedId = null; renderModel(); renderInspector(); return showToast("Current model snapshot opened."); }
     if (command === "getting-started") { $("#guide-panel").classList.remove("hidden"); return; }
+    if (command === "intro") { openIntro(); return; }
   }));
   $$("[data-ribbon]").forEach((button) => button.addEventListener("click", () => { $$("[data-ribbon]").forEach((item) => item.classList.toggle("active", item === button)); renderRibbon(button.dataset.ribbon); showToast(`${button.textContent} ribbon selected.`); }));
   $$("[data-zoom]").forEach((button) => button.addEventListener("click", () => { const action = button.dataset.zoom; if (state.mode === "3d") { if (action === "fit") state.meshWorld?.fit?.(); else state.meshWorld?.setCamera({ zoom: action === "in" ? 1.15 : 1 / 1.15 }); return; } state.zoom = action === "in" ? Math.min(1.3, state.zoom + .1) : action === "out" ? Math.max(.7, state.zoom - .1) : 1; $("#zoom-label").textContent = `${Math.round(state.zoom * 100)}%`; $("#model-canvas").style.transform = `scale(${state.zoom})`; }));
   $("#palette-search").addEventListener("input", (event) => $$(".library-item").forEach((item) => item.classList.toggle("hidden", !item.textContent.toLowerCase().includes(event.target.value.toLowerCase()))));
   const deepLink = new URLSearchParams(location.search);
   changeView(deepLink.get("view") === "2d" ? "2d" : "3d");
+  initHumanoidLab();
   const activeJobs = await api("/api/robot-routines/active");
   for (const job of activeJobs) { state.executionUI.started(job.id); watchJob(job.id, `/api/jobs/${job.id}/events`); }
   try {

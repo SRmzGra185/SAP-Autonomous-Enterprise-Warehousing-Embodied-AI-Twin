@@ -1,8 +1,10 @@
 import { createExceptionUI } from "./exception-ui.js";
+import { createCameraFeed } from "./camera-feed.js";
 
 export function createExecutionUI({ api, getModel, getWorld, getScenario, run, selectScenario, inspectNode, canApprove }) {
   const $ = (id) => document.getElementById(id), put = (id, value) => { $(id).textContent = value; };
   let jobId = null, pending = null, active = null, completed = new Set(), labels = new Map(), events = [];
+  let approvalCamera = null;
   const draftHost = document.createElement("div"), proofHost = document.createElement("div");
   draftHost.id = "exception-draft-host"; proofHost.id = "exception-proof-host";
   $("approval-panel").after(draftHost, proofHost);
@@ -29,7 +31,7 @@ export function createExecutionUI({ api, getModel, getWorld, getScenario, run, s
     }
   }
   function status(text, tone = "idle") { put("mission-status", text); $("mission-status").dataset.tone = tone; }
-  function clearApproval() { pending = null; exceptionUI.endApproval(); $("approval-panel").classList.add("hidden"); }
+  function clearApproval() { pending = null; approvalCamera?.stop(); exceptionUI.endApproval(); $("approval-panel").classList.add("hidden"); }
   async function decide(decision) {
     if (!pending || !jobId) return;
     $("approval-approve").disabled = true; $("approval-reject").disabled = true;
@@ -98,7 +100,20 @@ export function createExecutionUI({ api, getModel, getWorld, getScenario, run, s
       }
       if (event.type === "approval_required") {
         pending = event; status("Waiting for your approval", "waiting"); getWorld()?.setFlowState({ running: true, paused: true }); $("approval-panel").classList.remove("hidden");
-        put("approval-title", `${event.stepId} · ${event.label}`); put("approval-action", `${event.action} Command: ${event.command}. Intended actor: ${event.intendedActor || "Authorized operator"}.`);
+        put("approval-title", `${event.stepId} · ${event.label}`);
+        const riskAdvice = { critical: "Physical handling of goods. Verify identity and grip before approving.", risky: "Material movement. Confirm path is clear before approving.", routine: "Data / validation step. Low physical risk." };
+        const risk = event.risk || "routine";
+        const riskEl = $("approval-risk");
+        riskEl.textContent = `RISK: ${risk.toUpperCase()} — ${riskAdvice[risk] || riskAdvice.routine}`;
+        riskEl.dataset.risk = risk;
+        approvalCamera ||= createCameraFeed($("approval-camera-canvas"), { label: "H1 CAM · DECISION" });
+        const isaacImg = $("h1-snapshot-img");
+        const hasLiveFrame = isaacImg && isaacImg.complete && isaacImg.naturalWidth > 0;
+        approvalCamera.setLiveImage(hasLiveFrame ? isaacImg : null);
+        const camLabel = $("approval-camera")?.querySelector("small");
+        if (camLabel) camLabel.textContent = hasLiveFrame ? "LIVE ISAAC FRAME" : "SIMULATED FEED";
+        approvalCamera.start();
+        put("approval-action", `${event.action} Command: ${event.command}. Intended actor: ${event.intendedActor || "Authorized operator"}.`);
         put("approval-scope", `One simulated action · expires ${new Date(event.expiresAt).toLocaleTimeString()} · no SAP or robot writes. ${event.caseContext ? "SKU " + event.caseContext.sku + " · EPC " + event.caseContext.rfidEpc + " · qty " + event.caseContext.quantity + " → " + event.caseContext.destination + " · rack " + event.caseContext.rackState : ""}`);
         exceptionUI.beginApproval(event);
         put("approval-error", canApprove ? "The server is paused. Complete the fingerprint and explicitly review this action. Reject remains available without filling the form." : "An approver or administrator must decide."); $("approval-approve").disabled = !canApprove || !exceptionUI.canApprove(); $("approval-reject").disabled = !canApprove;

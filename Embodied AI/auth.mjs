@@ -37,7 +37,8 @@ async function verifyJwt(token, config) {
 
 export async function authenticate(req, config) {
   if (config.auth.mode === "desktop") {
-    if (!isLoopback(req.socket.remoteAddress)) throw new HttpError(401, "Desktop mode accepts loopback clients only.", "desktop_remote_denied");
+    const trustProxy = process.env.TRUST_PROXY === "true";
+    if (!trustProxy && !isLoopback(req.socket.remoteAddress)) throw new HttpError(401, "Desktop mode accepts loopback clients only.", "desktop_remote_denied");
     return { userId: config.auth.desktopUser, tenantId: config.auth.desktopTenant, roles: [config.auth.desktopRole.toLowerCase()], authMode: "desktop" };
   }
   const match = String(req.headers.authorization || "").match(/^Bearer\s+(.+)$/i);
