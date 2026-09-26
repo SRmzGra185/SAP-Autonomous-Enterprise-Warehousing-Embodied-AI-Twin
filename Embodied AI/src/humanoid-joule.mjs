@@ -43,7 +43,7 @@ function systemPrompt(robot, places, pose) {
     `Destinations on the current map:\n${list}`,
     pose ? `The robot is now at x=${pose.x}, y=${pose.y}, heading ${Math.round((pose.heading * 180) / Math.PI)}°.` : "",
     "Never invent destinations. If the user names a place that is not in the list, choose the closest matching id or say it is not on the map. 'Come back', 'return' or 'regresa' means go_to start.",
-    'Respond ONLY with JSON: {"answer": string (max 60 words, what the robot will do, in the user\'s language), "steps": [ ... ]}. No prose outside the JSON.'
+    'Respond ONLY with JSON: {"answer": string (max 60 words, what the robot will do, always in English even when the instruction is in another language), "steps": [ ... ]}. No prose outside the JSON.'
   ].filter(Boolean).join("\n");
 }
 
