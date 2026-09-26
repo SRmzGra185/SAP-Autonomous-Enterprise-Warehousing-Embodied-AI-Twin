@@ -42,8 +42,21 @@ export function detectFallbackReason({ response, error, usage, steps, limits, fo
 
 const compatibilityError = (error) => error instanceof Anthropic.BadRequestError && /thinking|output_config|effort|cache_control|metadata/i.test(error.message);
 
+// Message content is a string, or an array of { type: "text", text } and { type: "image", url }
+// (url = "data:image/jpeg;base64,…") for vision requests; each provider gets its own shape.
+const contentParts = (content) => (Array.isArray(content) ? content : [{ type: "text", text: String(content ?? "") }]);
+function anthropicContent(content) {
+  if (!Array.isArray(content)) return content;
+  return content.map((part) => {
+    if (part.type !== "image") return { type: "text", text: String(part.text ?? "") };
+    const [, mediaType, data] = String(part.url).match(/^data:(image\/[a-z]+);base64,(.+)$/) || [];
+    if (!data) throw new Error("Images must be base64 data URIs.");
+    return { type: "image", source: { type: "base64", media_type: mediaType, data } };
+  });
+}
+
 async function completeAnthropic(config, { system, messages, maxTokens, model, effort, safetyId }) {
-  const base = { model, max_tokens: maxTokens, messages };
+  const base = { model, max_tokens: maxTokens, messages: messages.map((message) => ({ role: message.role, content: anthropicContent(message.content) })) };
   const request = { ...base, system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }], metadata: { user_id: safetyId }, ...(config.orchestrator.thinking ? { thinking: { type: "adaptive" }, output_config: { effort } } : {}) };
   let response;
   try { response = await anthropic(config).messages.create(request); }
@@ -57,8 +70,15 @@ const finishReasonMap = { stop: "end_turn", length: "max_tokens", content_filter
 async function completeAiCore(config, { system, messages, maxTokens, model }) {
   const client = new OrchestrationClient({ promptTemplating: { model: { name: model, params: { max_tokens: maxTokens } } } }, { resourceGroup: config.orchestrator.resourceGroup });
   // Content travels through placeholders so JSON braces never collide with the {{?placeholder}} templating syntax.
+  // Images go as image_url parts (data URIs never contain braces); their text parts still use placeholders.
   const placeholderValues = { sys: system };
-  const templated = messages.map((message, index) => { placeholderValues[`m${index}`] = String(message.content); return { role: message.role, content: `{{?m${index}}}` }; });
+  const templated = messages.map((message, index) => {
+    if (!Array.isArray(message.content)) { placeholderValues[`m${index}`] = String(message.content); return { role: message.role, content: `{{?m${index}}}` }; }
+    return { role: message.role, content: contentParts(message.content).map((part, n) => {
+      if (part.type === "image") return { type: "image_url", image_url: { url: String(part.url) } };
+      placeholderValues[`m${index}_${n}`] = String(part.text ?? ""); return { type: "text", text: `{{?m${index}_${n}}}` };
+    }) };
+  });
   const response = await client.chatCompletion({ messages: [{ role: "system", content: "{{?sys}}" }, ...templated], placeholderValues });
   const usage = response.getTokenUsage?.() || {}, finish = response.getFinishReason?.() || "stop";
   return { id: `aicore_${response.rawResponse?.data?.request_id || crypto.randomUUID()}`, provider: "aicore", model, stop_reason: finishReasonMap[finish] || finish, text: (response.getContent?.() || "").trim(), usage: { input: usage.prompt_tokens || 0, output: usage.completion_tokens || 0, cacheRead: usage.prompt_tokens_details?.cached_tokens || 0, cacheWrite: usage.prompt_tokens_details?.cache_creation_tokens || 0 } };

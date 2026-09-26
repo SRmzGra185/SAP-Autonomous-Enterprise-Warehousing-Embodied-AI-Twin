@@ -633,7 +633,7 @@ function confirmOptimizerResult(summary) {
 // Self-contained: its own status poll, SSE watcher, reward chart and warehouse map. Reuses the
 // same Isaac executor/bridge as the warehouse Routine Lab but never touches state.robotRunning or
 // the GRAFCET/mesh-world state, so the two labs cannot interfere with each other.
-const h1 = { source: null, trainPoints: [], running: false, pose: null, path: null, map: null, mapVersion: 0, robot: "h1", view: "chase", plan: [] };
+const h1 = { source: null, trainPoints: [], running: false, pose: null, path: null, map: null, mapVersion: 0, robot: "h1", view: "chase", plan: [], orders: [], orderSel: null, evidence: {}, connected: false };
 const h1$ = (selector) => document.querySelector(selector) || h1.pip?.document.querySelector(selector) || null;
 const H1_ROBOT_LABEL = { h1: "Unitree H1", go2: "Unitree Go2" };
 const H1_TASK = { h1: "Isaac-Velocity-Flat-H1-v0", go2: "Isaac-Velocity-Flat-Unitree-Go2-v0" };
@@ -725,14 +725,14 @@ function h1Watch(jobId) {
   const source = new EventSource(`/api/jobs/${jobId}/events`);
   h1.source = source; h1.running = true;
   let lastSequence = 0;
-  const types = ["job_started", "job_complete", "job_failed", "job_cancelled", "fallback_activated", "planner_progress", "h1_train_started", "h1_train_metric", "h1_train_complete", "h1_deploy_started", "h1_deploy_phase", "h1_deploy_ready", "h1_deploy_complete", "h1_teleop_started", "h1_teleop_step", "h1_teleop_complete", "h1_log", "h1_snapshot", "h1_nav_path", "h1_plan_step", "h1_navigate_complete", "h1_camera_complete", "h1_plan_complete", "h1_joule_answer"];
+  const types = ["job_started", "job_complete", "job_failed", "job_cancelled", "fallback_activated", "planner_progress", "h1_train_started", "h1_train_metric", "h1_train_complete", "h1_deploy_started", "h1_deploy_phase", "h1_deploy_ready", "h1_deploy_complete", "h1_teleop_started", "h1_teleop_step", "h1_teleop_complete", "h1_log", "h1_snapshot", "h1_nav_path", "h1_plan_step", "h1_navigate_complete", "h1_camera_complete", "h1_plan_complete", "h1_joule_answer", "h1_order_update"];
   const terminal = ["job_complete", "job_failed", "job_cancelled"];
   for (const type of types) source.addEventListener(type, (event) => {
     const payload = JSON.parse(event.data);
     if (payload.sequence && payload.sequence <= lastSequence) return;
     lastSequence = payload.sequence || lastSequence;
     h1Consume(payload);
-    if (terminal.includes(type)) { source.close(); h1.source = null; h1.running = false; }
+    if (terminal.includes(type)) { source.close(); h1.source = null; h1.running = false; h1LoadOrders(); }
   });
   source.onerror = () => { if (h1.running) h1Log("Event stream interrupted; reconnecting…"); };
 }
@@ -772,11 +772,85 @@ function h1Consume(event) {
   if (event.type === "planner_progress") { h1$("#h1-joule-answer").textContent = "Joule is planning the mission on SAP AI Core…"; }
   if (event.type === "fallback_activated") h1Log(event.message || event.detail || "Fallback activated");
   if (event.type === "job_failed") { h1SetGait("ERROR"); showToast(event.error || "Robot job failed."); }
+  if (event.type === "h1_order_update") { h1.orderSel = event.order.id; h1UpsertOrder(event.order); }
   if (event.type === "h1_joule_answer") {
     const el = h1$("#h1-joule-answer"); el.classList.remove("pending");
     el.textContent = event.provider && event.provider !== "mock" ? `Joule: ${event.answer}` : `Joule (local): ${event.answer}`;
     h1.plan = (event.steps || []).map((step) => ({ label: step.label, status: "pending" })); h1RenderPlan();
   }
+}
+
+// SAP EWM warehouse tasks (simulated) → robot mission → Joule vision check → back to EWM.
+const H1_ORDER_STATUS = { open: "Open", in_progress: "Mission planned", en_route: "Robot en route", at_bin: "At the bin", verifying: "Joule checking", confirmed: "Confirmed", exception: "Exception", review: "Needs a person" };
+const H1_STAGES = [["created", "Created in SAP EWM"], ["planned", "Robot mission"], ["at_bin", "Robot at the bin"], ["evidence", "Photo evidence"], ["verified", "Joule vision check"], ["closed", "Back to SAP EWM"]];
+const h1Time = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "");
+
+async function h1LoadOrders() {
+  try { h1.orders = (await api("/api/humanoid/orders")).orders; h1RenderOrders(); } catch { /* informational */ }
+}
+
+function h1UpsertOrder(order) {
+  const index = h1.orders.findIndex((item) => item.id === order.id);
+  if (index >= 0) h1.orders[index] = order; else h1.orders.push(order);
+  h1RenderOrders();
+}
+
+function h1RenderOrders() {
+  const list = h1$("#h1-orders");
+  if (!list) return;
+  const busy = h1.running || h1.orders.some((order) => ["in_progress", "en_route", "at_bin", "verifying"].includes(order.status));
+  list.innerHTML = h1.orders.length ? h1.orders.map((order) => {
+    const canDispatch = order.status === "open" && h1.connected && !busy;
+    return `<div class="h1-order st-${escapeHtml(order.status)}${order.id === h1.orderSel ? " selected" : ""}" data-order="${escapeHtml(order.id)}" tabindex="0">
+      <div class="h1-order-main"><b>${escapeHtml(order.id)}</b><span>${escapeHtml(order.storageBin)} · ${escapeHtml(order.product)} · ${escapeHtml(order.expectedQty)} ${escapeHtml(order.uom)}</span></div>
+      <span class="h1-order-status">${escapeHtml(H1_ORDER_STATUS[order.status] || order.status)}</span>
+      ${order.status === "open" ? `<button type="button" data-dispatch="${escapeHtml(order.id)}" ${canDispatch ? "" : "disabled"} title="${h1.connected ? (busy ? "Another robot job is running" : "Send the robot") : "Connect Isaac Sim and deploy a robot first"}">Dispatch</button>` : ""}
+    </div>`;
+  }).join("") : "<em>No tasks.</em>";
+  h1RenderOrderCard();
+}
+
+function h1RenderOrderCard() {
+  const card = h1$("#h1-order-card"), order = h1.orders.find((item) => item.id === h1.orderSel);
+  if (!card) return;
+  card.hidden = !order;
+  if (!order) return;
+  const last = (key) => [...order.timeline].reverse().find((entry) => entry.stage === key);
+  const steps = H1_STAGES.map(([key, label]) => {
+    const entry = last(key), tone = !entry ? "pending" : { ok: "done", active: "active", warn: "warn", fail: "fail" }[entry.tone] || "done";
+    return `<li class="${tone}"><b>${escapeHtml(entry?.label || label)}</b>${entry ? `<em>${escapeHtml(h1Time(entry.at))}${entry.detail ? ` · ${escapeHtml(entry.detail)}` : ""}</em>` : ""}</li>`;
+  }).join("");
+  const v = order.verdict, shot = h1.evidence[order.id];
+  const evidence = order.evidence ? `<div class="h1-evidence">
+      <figure>${shot?.image ? `<img src="${shot.image}" alt="Robot photo of ${escapeHtml(order.storageBin)}" />` : "<span>Loading photo…</span>"}<figcaption>${escapeHtml(order.evidence.caption || "Inspect camera")}</figcaption></figure>
+      <div class="h1-verdict">${v ? `<div class="h1-verdict-head"><i class="joule-icon" aria-hidden="true"></i><span class="h1-rack rack-${escapeHtml(v.rackState)}">${escapeHtml(v.rackState)}</span><em>${Math.round(v.confidence * 100)}% confidence</em></div>
+        <p>${escapeHtml(v.summary)}</p>${v.observations?.length ? `<ul>${v.observations.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+        <small>${v.cached ? "Same photo checked before · answer reused, no new call" : v.provider === "mock" ? "Joule not connected" : "Joule vision check · 1 call for this mission"}</small>` : `<div class="h1-verdict-head"><i class="joule-icon" aria-hidden="true"></i><em>Joule is checking the photo…</em></div>`}</div>
+    </div>` : "";
+  const c = order.confirmation;
+  const confirmation = c ? `<div class="h1-confirmation ${c.outcome}"><b>${c.outcome === "confirmed" ? "Warehouse task confirmed" : `${escapeHtml(c.code)} · ${escapeHtml(c.label)}`}</b><span>${escapeHtml(c.document)} · ${escapeHtml(c.by)} · simulated</span>${c.followUp ? `<em>${escapeHtml(c.followUp)}</em>` : ""}</div>` : "";
+  const review = order.status === "review" ? `<div class="h1-review"><span>Joule is not confident enough to post to SAP. You decide:</span><button type="button" class="primary-button" data-decision="confirm">Confirm task</button><button type="button" class="secondary-button" data-decision="exception">Raise exception</button></div>` : "";
+  card.innerHTML = `<div class="h1-order-card-head"><strong>${escapeHtml(order.id)} · ${escapeHtml(order.type)}</strong><span>${escapeHtml(order.storageBin)} · ${escapeHtml(order.productName)} (${escapeHtml(order.product)}) · ${escapeHtml(order.expectedQty)} ${escapeHtml(order.uom)} · warehouse ${escapeHtml(order.warehouse)} · ${escapeHtml(order.source)}</span></div>
+    <ol class="h1-order-steps">${steps}</ol>${evidence}${confirmation}${review}`;
+  if (order.evidence && shot?.capturedAt !== order.evidence.capturedAt) {
+    h1.evidence[order.id] = { capturedAt: order.evidence.capturedAt };
+    api(`/api/humanoid/orders/${encodeURIComponent(order.id)}/evidence`).then((photo) => { h1.evidence[order.id] = { capturedAt: order.evidence.capturedAt, image: photo.image }; h1RenderOrderCard(); }).catch(() => {});
+  }
+}
+
+function h1DispatchOrder(id) {
+  h1.orderSel = id; h1.path = null; h1.plan = []; h1RenderPlan(); h1RenderOrders();
+  return h1RunJob(`/api/humanoid/orders/${encodeURIComponent(id)}/dispatch`, {}, null);
+}
+
+async function h1DecideOrder(decision) {
+  try { const out = await api(`/api/humanoid/orders/${encodeURIComponent(h1.orderSel)}/decision`, { method: "POST", body: JSON.stringify({ decision }) }); h1UpsertOrder(out.order); showToast(decision === "confirm" ? "Task confirmed in SAP EWM (simulated)." : "Exception raised in SAP EWM (simulated)."); }
+  catch (error) { showToast(error.message); }
+}
+
+async function h1ResetOrders() {
+  try { h1.orders = (await api("/api/humanoid/orders/reset", { method: "POST", body: "{}" })).orders; h1.orderSel = null; h1.evidence = {}; h1RenderOrders(); showToast("New demo tasks on the racks of this warehouse."); }
+  catch (error) { showToast(error.message); }
 }
 
 async function h1RunJob(path, body, button) {
@@ -810,6 +884,7 @@ async function h1RefreshStatus() {
     const status = await api("/api/humanoid/descriptor");
     const ex = status.executor;
     h1$("#h1-isaac-strip").classList.toggle("connected", Boolean(status.connected));
+    if (Boolean(status.connected) !== h1.connected) { h1.connected = Boolean(status.connected); h1LoadOrders(); }
     h1$("#h1-isaac-status").textContent = `Isaac Sim · ${status.connected ? "CONNECTED" : "OFFLINE"}`;
     h1$("#h1-isaac-executor").textContent = status.connected ? `${ex.robotLabel || ex.name}${ex.environment ? ` · ${status.environments?.[ex.environment] || ex.environment}` : ""}${ex.dryRun ? " · dry run" : ""}` : "no executor connected";
     if (status.connected && ex?.robot) { h1SetRobot(ex.robot, ex.environment); if (ex.view && !h1.running) h1SetView(ex.view); }
@@ -819,7 +894,7 @@ async function h1RefreshStatus() {
       api("/api/humanoid/frame").then((frame) => { h1$("#h1-snapshot").classList.add("has-frame"); h1$("#h1-snapshot-img").src = frame.image; h1Log(frame.caption || "Robot camera · live"); }).catch(() => {});
     }
     const version = status.map?.version || 0;
-    if (version !== h1.mapVersion) { h1.mapVersion = version; h1LoadMap(); }
+    if (version !== h1.mapVersion) { h1.mapVersion = version; h1LoadMap(); h1LoadOrders(); }
     if (!h1.running) {
       const active = await api("/api/humanoid/active");
       if (active.length) h1Watch(active[0].id);
@@ -888,6 +963,16 @@ function initHumanoidLab() {
   try { urlInput.value = localStorage.getItem("h1-isaac-viewer-url") || ""; } catch { /* private mode */ }
   syncViewerLink();
   urlInput.addEventListener("input", () => { try { localStorage.setItem("h1-isaac-viewer-url", urlInput.value.trim()); } catch { /* private mode */ } syncViewerLink(); });
+
+  h1$("#h1-orders-reset").addEventListener("click", h1ResetOrders);
+  h1$("#h1-orders").addEventListener("click", (event) => {
+    const dispatch = event.target.closest("[data-dispatch]");
+    if (dispatch) return h1DispatchOrder(dispatch.dataset.dispatch);
+    const row = event.target.closest("[data-order]");
+    if (row) { h1.orderSel = row.dataset.order; h1RenderOrders(); }
+  });
+  h1$("#h1-order-card").addEventListener("click", (event) => { const button = event.target.closest("[data-decision]"); if (button) h1DecideOrder(button.dataset.decision); });
+  h1LoadOrders();
 
   const goalInput = h1$("#h1-joule-goal");
   h1$("#h1-joule-run").addEventListener("click", () => runH1Joule(goalInput.value));

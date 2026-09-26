@@ -8,7 +8,7 @@
     "start": "node server.mjs",
     "dev": "node --watch server.mjs",
     "start:env": "node --env-file=.env server.mjs",
-    "test": "node test/sap-connections.mjs && node test/industrial-timing.mjs && node test/exception-resolution.mjs && node test/full-circle.mjs && node test/routine-library.mjs && node test/recipe-library.mjs && node test/model-editor.mjs && node test/experiments-ui.mjs && node test/unitree-meshes.mjs && node test/robotics-smoke.mjs",
+    "test": "node test/sap-connections.mjs && node test/industrial-timing.mjs && node test/exception-resolution.mjs && node test/full-circle.mjs && node test/routine-library.mjs && node test/recipe-library.mjs && node test/sap-orders.mjs && node test/model-editor.mjs && node test/experiments-ui.mjs && node test/unitree-meshes.mjs && node test/robotics-smoke.mjs",
     "test:browser": "node test/editor-browser.mjs"
   },
   "engines": {

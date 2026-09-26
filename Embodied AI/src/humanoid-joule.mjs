@@ -38,7 +38,7 @@ function systemPrompt(robot, places, pose) {
     "Turn the user's instruction into a short mission plan of 1 to 8 steps. Step types:",
     '- {"type":"go_to","place":"<id>"}: walk to a named destination; the robot plans its own collision-free route. Use ONLY ids from the list below.',
     '- {"type":"move","vx":m/s,"vy":m/s,"yaw":rad/s,"durationMs":int}: bounded velocity command (vx forward, yaw positive = turn left). Limits: |vx| ≤ 1.0, |vy| ≤ 0.4, |yaw| ≤ 1.2, 500 ≤ durationMs ≤ 15000. A 180° turn is about yaw 1.0 for 3200 ms.',
-    '- {"type":"view","view":"chase"|"wide"|"top"}: camera (chase follows behind, wide shows the aisle, top is overhead).',
+    '- {"type":"view","view":"chase"|"wide"|"top"|"inspect"}: camera (chase follows behind, wide shows the aisle, top is overhead, inspect looks over the robot\'s shoulder at what it faces, e.g. a rack after go_to).',
     '- {"type":"wait","ms":int}: hold position (200-20000 ms).',
     `Destinations on the current map:\n${list}`,
     pose ? `The robot is now at x=${pose.x}, y=${pose.y}, heading ${Math.round((pose.heading * 180) / Math.PI)}°.` : "",

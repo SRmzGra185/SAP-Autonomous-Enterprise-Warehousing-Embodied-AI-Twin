@@ -36,7 +36,7 @@ export function createIsaacBridge(config) {
       id: text(info.id || "isaac-executor", 64), name: text(info.name || "Isaac Sim", 80), scene: text(info.scene, 120), version: text(info.version, 40), dryRun: Boolean(info.dryRun), lastSeen: now(),
       robot: slug(info.robot, 12) || executor?.robot || null, robotLabel: text(info.robotLabel, 40) || executor?.robotLabel || null,
       environment: String(info.environment || "").toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 40) || executor?.environment || null,
-      pose, mapVersion: num(info.mapVersion, 0, 0, 1e6), view: ["chase", "wide", "top"].includes(info.view) ? info.view : executor?.view || "chase"
+      pose, mapVersion: num(info.mapVersion, 0, 0, 1e6), view: ["chase", "wide", "top", "inspect"].includes(info.view) ? info.view : executor?.view || "chase"
     };
     return executor;
   }

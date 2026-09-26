@@ -41,7 +41,7 @@ export const ENVIRONMENTS = {
   warehouse: "Simple warehouse",
   grid: "Empty grid"
 };
-export const VIEWS = ["chase", "wide", "top"];
+export const VIEWS = ["chase", "wide", "top", "inspect"];
 const LIMITS = { h1: { vx: [-0.6, 1.0], vy: [-0.4, 0.4], yaw: [-1.2, 1.2] }, go2: { vx: [-1.0, 1.2], vy: [-0.6, 0.6], yaw: [-1.2, 1.2] } };
 
 const PRETRAINED = { id: "h1_flat_pretrained", label: "H1 flat-terrain (NVIDIA pretrained)", reward: 21.4, iterations: 1500, source: "Isaac Lab checkpoint" };

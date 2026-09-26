@@ -121,7 +121,7 @@
           <section class="humanoid-stage">
             <div class="robot-section-heading"><div><span class="eyebrow" id="h1-stage-eyebrow">ROBOT VIEW</span><strong id="h1-stage-title">Robot camera / chase view</strong></div><div class="h1-stage-actions"><span class="mesh-badge" id="h1-gait-badge">STANDBY</span><button type="button" class="h1-mission-toggle" id="h1-mission-toggle" title="Large view with Joule beside it (Esc to exit)">⤢ Mission view</button></div></div>
             <div class="h1-view-bar" role="group" aria-label="Camera">
-              <button type="button" data-h1-view="chase" class="active">Chase</button><button type="button" data-h1-view="wide">Wide</button><button type="button" data-h1-view="top">Top</button><button type="button" id="h1-find-robot" title="Point the Isaac Sim viewport back at the robot">⌖ Find robot</button>
+              <button type="button" data-h1-view="chase" class="active">Chase</button><button type="button" data-h1-view="wide">Wide</button><button type="button" data-h1-view="top">Top</button><button type="button" data-h1-view="inspect" title="Over the robot's shoulder, looking at what it faces">Inspect</button><button type="button" id="h1-find-robot" title="Point the Isaac Sim viewport back at the robot">⌖ Find robot</button>
             </div>
             <figure class="isaac-snapshot h1-snapshot" id="h1-snapshot"><img id="h1-snapshot-img" alt="Isaac Sim robot view" /><figcaption id="h1-snapshot-caption">Waiting for a job…</figcaption></figure>
             <div class="h1-map-wrap" id="h1-map-wrap">
@@ -156,7 +156,14 @@
               </div>
             </div>
 
-            <div class="robot-section-heading" style="margin-top:14px"><div><span class="eyebrow">3 · DRIVE &amp; NAVIGATE</span><strong id="h1-drive-title">Drive the robot</strong></div></div>
+            <div class="h1-block h1-orders-block">
+              <div class="robot-section-heading" style="margin-top:14px"><div><span class="eyebrow">3 · SAP EWM → ROBOT → SAP EWM</span><strong>Warehouse tasks for the robot</strong></div><button type="button" id="h1-orders-reset" class="h1-link" title="New demo tasks on the racks of the loaded warehouse">↻ New demo tasks</button></div>
+              <p class="h1-hint">Stock checks from SAP EWM (simulated). Dispatch one: the robot walks to the bin and photographs it, Joule checks the photo, and the task is confirmed back in SAP EWM or an exception is raised. Nothing is written to a real SAP system.</p>
+              <div class="h1-orders" id="h1-orders"><em>Loading tasks…</em></div>
+              <div class="h1-order-card" id="h1-order-card" hidden></div>
+            </div>
+
+            <div class="robot-section-heading" style="margin-top:14px"><div><span class="eyebrow">4 · DRIVE &amp; NAVIGATE</span><strong id="h1-drive-title">Drive the robot</strong></div></div>
             <div class="h1-teleop-pad">
               <button data-h1-move="forward" class="secondary-button">↑ Walk</button>
               <div class="h1-teleop-row"><button data-h1-move="left" class="secondary-button">↺ Turn L</button><button data-h1-move="stop" class="secondary-button">■ Stop</button><button data-h1-move="right" class="secondary-button">↻ Turn R</button></div>
@@ -208,6 +215,6 @@
     </section>
 
     <div class="toast" id="toast" role="status"></div>
-    <script type="module" src="/app.js?v=0.10.0-recipe-library"></script>
+    <script type="module" src="/app.js?v=0.11.0-sap-orders"></script>
   </body>
 </html>

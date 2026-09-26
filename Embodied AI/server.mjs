@@ -26,7 +26,8 @@ import { runLayoutOptimization } from "./src/optimizer.mjs";
 import { jouleAssist, jouleDescriptor } from "./src/joule-assistant.mjs";
 import { buildLastRunAnalytics, buildLastRoutineAnalytics, buildJouleForJob } from "./src/run-analytics.mjs";
 import { createIsaacBridge } from "./src/isaac-bridge.mjs";
-import { createHumanoidLab, validateTrainInput, validateDeployInput, validateTeleopInput, validateNavigateInput, validateCameraInput } from "./src/humanoid-lab.mjs";
+import { createHumanoidLab, validateTrainInput, validateDeployInput, validateTeleopInput, validateNavigateInput, validateCameraInput, validatePlan } from "./src/humanoid-lab.mjs";
+import { createOrderBook, publicOrder, missionFor, stage as orderStage, jouleVerifyBin, decide as decideOrder, closeOrder } from "./src/sap-orders.mjs";
 import { jouleMissionPlan, presetPrompts as h1JoulePrompts } from "./src/humanoid-joule.mjs";
 
 assertSecureConfiguration();
@@ -37,6 +38,7 @@ const lastRoutineByTenant = new Map(); // tenantId -> job (kind "robot_routine",
 const limit = createRateLimiter(config.rateLimit), adapterIds = adapters.map((adapter) => adapter.id);
 const isaac = createIsaacBridge(config);
 const humanoidLab = createHumanoidLab(isaac);
+const orderBook = createOrderBook(), visionCache = new Map(); // simulated SAP EWM tasks; Joule vision answers by photo
 const runtime = config.orchestrator.enabled ? runtimeDescriptor(config) : operationsRuntimeDescriptor(config);
 const recipes = new Map();
 // Per-tenant counters that show how many Joule calls the recipe cache avoided, and the cached insights.
@@ -78,6 +80,53 @@ function startRobotRoutine(principal, input, saved = null) {
   record("robot_routine_queued", { jobId: job.id, scenarioId: input.scenarioId, mode: input.mode, cycles: input.cycles, recipeId: saved?.id || null, result: "queued" }, principal);
   return job;
 }
+// SAP EWM task → robot mission → Joule checks the photo → confirmation or exception back to EWM (simulated).
+async function runOrderMission(order, steps, principal, emit, controls, job) {
+  const update = () => emit({ type: "h1_order_update", order: publicOrder(order) });
+  const inspectStep = steps.findIndex((step) => step.type === "view" && step.view === "inspect") + 1;
+  Object.assign(order, { status: "in_progress", jobId: job.id, evidence: null, verdict: null, confirmation: null, timeline: order.timeline.filter((entry) => entry.stage === "created") });
+  orderStage(order, "planned", steps.map((step) => step.label).join(" → "));
+  await update();
+  await emit({ type: "h1_joule_answer", goal: `${order.id} · ${order.type} at ${order.storageBin}`, answer: `SAP EWM task ${order.id}: walk to ${order.storageBin}, photograph the bin with the inspect camera, let Joule check the photo, then return to the start. The mission is compiled from the task, so no planning call is needed.`, steps, provider: "sap-order", model: null });
+  let current = null, pose = null, failure = null, verification = null;
+  const verify = async () => {
+    let verdict;
+    try { verdict = await jouleVerifyBin(config, { image: order.evidence.image, order, principal, cache: visionCache }); }
+    catch (error) { verdict = { rackState: "unclear", confidence: 0, summary: `Joule could not check the photo (${String(error.message || error).slice(0, 120)}).`, observations: [], provider: config.orchestrator.provider, model: null, usage: null, cached: false }; }
+    order.verdict = verdict;
+    const outcome = decideOrder(verdict);
+    orderStage(order, "verified", `${verdict.rackState} · ${Math.round(verdict.confidence * 100)}% confidence${verdict.cached ? " · same photo, answer reused" : ""}`, outcome.decision === "confirm" ? "ok" : "warn");
+    if (outcome.decision === "review") { order.status = "review"; orderStage(order, "closed", "Joule is not confident enough to post to SAP: a person confirms the task or raises an exception.", "warn", "Needs a person"); }
+    else closeOrder(order, { ...outcome, by: "Joule + robot evidence" });
+    record(`sap_order_${order.status}`, { orderId: order.id, jobId: job.id, rackState: verdict.rackState, confidence: verdict.confidence, simulated: true, result: order.status }, principal);
+    await update();
+  };
+  const tap = async (event) => {
+    if (event.type === "h1_teleop_step") pose = event.pose;
+    if (event.type === "h1_plan_step") {
+      current = event;
+      if (event.status === "failed") failure = event.detail || event.label;
+      if (event.index === 1 && event.status === "running") { order.status = "en_route"; orderStage(order, "at_bin", `Walking to ${order.storageBin}`, "active", "Robot en route"); await update(); }
+      if (event.index === 1 && event.status === "done") { order.status = "at_bin"; orderStage(order, "at_bin", `${order.storageBin} · ${event.detail}`); await update(); }
+    }
+    if (event.type === "h1_snapshot" && current?.index === inspectStep && current.status === "running" && !order.evidence) {
+      order.evidence = { image: event.image, caption: event.caption, capturedAt: new Date().toISOString(), pose };
+      order.status = "verifying";
+      orderStage(order, "evidence", `Inspect camera at ${order.storageBin}${pose ? ` · x ${pose.x}, y ${pose.y}` : ""}`);
+      await update();
+      verification = verify(); // Joule checks the photo while the robot walks back
+    }
+    await emit(event);
+  };
+  const reopen = async (why) => { order.status = "open"; orderStage(order, "at_bin", `${why} The task stays open in SAP EWM.`, "fail", "Mission stopped"); await update(); };
+  let result;
+  try { result = await humanoidLab.runPlan({ steps }, tap, controls, job); }
+  catch (error) { if (!order.evidence) await reopen(`${error.message}.`); throw error; }
+  if (verification) await verification;
+  else await reopen(result ? `The robot did not reach ${order.storageBin}${failure ? ` (${failure})` : ""}.` : "The Isaac Sim executor did not pick up the mission.");
+  return { ...(result || {}), order: publicOrder(order) };
+}
+
 const challengeScenario = robotScenarioById("autonomous-inspection");
 const challengeModel = composeRobotTwin(defaultModel, defaultModel, challengeScenario);
 
@@ -420,6 +469,45 @@ async function routeRequest(req, res) {
         await emit({ type: "h1_joule_answer", goal, answer: joule.answer, steps: joule.steps, provider: joule.provider, model: joule.model });
         return humanoidLab.runPlan({ steps: joule.steps }, emit, controls, job);
       });
+    }
+    // SAP EWM warehouse tasks (simulated) the robot can execute; confirmations are simulated too.
+    if (req.method === "GET" && pathname === "/api/humanoid/orders") return json(res, 200, { orders: orderBook.list(principal.tenantId, isaac.mapPlaces()).map(publicOrder), source: "SAP EWM · simulated", productionWrites: false }, origin, rate);
+    if (req.method === "POST" && pathname === "/api/humanoid/orders/reset") {
+      if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
+      if (humanoidBusy()) throw new HttpError(409, "Stop or finish the active robot job first.", "routine_busy");
+      const orders = orderBook.reset(principal.tenantId, isaac.mapPlaces());
+      record("sap_orders_reset", { count: orders.length, result: "reset" }, principal);
+      return json(res, 200, { orders: orders.map(publicOrder) }, origin, rate);
+    }
+    const orderMatch = pathname.match(/^\/api\/humanoid\/orders\/([A-Za-z0-9-]+)\/(dispatch|decision|evidence)$/);
+    if (orderMatch) {
+      const order = orderBook.get(principal.tenantId, orderMatch[1], isaac.mapPlaces()), action = orderMatch[2];
+      if (!order) throw new HttpError(404, "Unknown warehouse task.", "not_found");
+      if (req.method === "GET" && action === "evidence") {
+        if (!order.evidence) return json(res, 404, { error: "No photo for this task yet.", code: "no_evidence" }, origin, rate);
+        return json(res, 200, { image: order.evidence.image, caption: order.evidence.caption, capturedAt: order.evidence.capturedAt }, origin, rate);
+      }
+      if (req.method === "POST" && action === "dispatch") {
+        if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
+        if (humanoidBusy()) throw new HttpError(409, "Stop or finish the active robot job before starting another.", "routine_busy");
+        if (order.status !== "open") throw new HttpError(409, `Task ${order.id} is ${order.status.replace("_", " ")}; reset the demo tasks to run it again.`, "order_closed");
+        if (!isaac.connected()) throw new HttpError(409, "Connect the Isaac Sim executor and deploy a robot: the task needs the warehouse map and the robot camera.", "isaac_offline");
+        const places = isaac.mapPlaces(), place = places.find((p) => p.id === order.placeId) || places.find((p) => p.name.toLowerCase() === order.storageBin.toLowerCase());
+        if (!place) throw new HttpError(409, `${order.storageBin} is not on the current warehouse map. Reset the demo tasks to use this warehouse's racks.`, "bin_not_on_map");
+        order.placeId = place.id;
+        let steps;
+        try { steps = validatePlan(missionFor(order), places, isaac.executorState()?.robot || "h1"); } catch (error) { throw new HttpError(409, error.message, "validation_error"); }
+        return launchHumanoid("order", (emit, controls, job) => runOrderMission(order, steps, principal, emit, controls, job));
+      }
+      if (req.method === "POST" && action === "decision") {
+        if (!principal.roles.some((role) => ["admin", "approver"].includes(role))) throw new HttpError(403, "An approver or administrator role is required.", "role_denied");
+        if (order.status !== "review") throw new HttpError(409, `Task ${order.id} is not waiting for a person.`, "order_not_in_review");
+        const body = await readJson(req, config);
+        if (!["confirm", "exception"].includes(body?.decision)) throw new HttpError(400, "Decision must be confirm or exception.", "validation_error");
+        closeOrder(order, body.decision === "confirm" ? { decision: "confirm", by: `reviewed by ${principal.userId}` } : { decision: "exception", code: "CHCK", label: "Recount requested", followUp: "Physical inventory recount requested for the bin (simulated).", by: `reviewed by ${principal.userId}` });
+        record(`sap_order_${order.status}`, { orderId: order.id, reviewer: principal.userId, simulated: true, result: order.status }, principal);
+        return json(res, 200, { order: publicOrder(order) }, origin, rate);
+      }
     }
     if (req.method === "GET" && pathname === "/api/humanoid/active") return json(res, 200, [...jobs.values()].filter((job) => job.tenantId === principal.tenantId && job.kind === "humanoid" && ["queued", "running"].includes(job.status)).map(jobEnvelope), origin, rate);
     const resolutionMatch = pathname.match(/^\/api\/jobs\/([^/]+)\/resolution$/);
