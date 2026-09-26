@@ -26,7 +26,7 @@ export function validateModelInput(body) {
     return {
       ...node, id, name: text(node.name, `nodes[${index}].name`, 100), subtitle: text(node.subtitle || "Operational object", `nodes[${index}].subtitle`, 160),
       kind: oneOf(node.kind, `nodes[${index}].kind`, ["source", "bdc", "data", "consume", "audit", "agent"]),
-      visual: oneOf(node.visual, `nodes[${index}].visual`, ["warehouse", "tower", "reactor", "silo", "crate", "pavilion", "robot", "joule", "unitree", "gate", "posTerminal", "retailShelf", "rack", "mobileManipulator", "safetyZone", "sensorMast", "amr", "cobotCell", "conveyor", "inspectionCell", "loadingDock", "partsFeeder", "assemblyFixture", "torqueStation", "robotDock", "quadruped", "processMachine"]),
+      visual: oneOf(node.visual, `nodes[${index}].visual`, ["warehouse", "tower", "reactor", "silo", "crate", "pavilion", "robot", "joule", "unitree", "unitreeHumanoid", "gate", "posTerminal", "retailShelf", "rack", "mobileManipulator", "safetyZone", "sensorMast", "amr", "cobotCell", "conveyor", "inspectionCell", "loadingDock", "partsFeeder", "assemblyFixture", "torqueStation", "robotDock", "quadruped", "processMachine"]),
       x: number(node.x, `nodes[${index}].x`, -1000, 2000), y: number(node.y, `nodes[${index}].y`, -1000, 2000), z: number(node.z ?? 0, `nodes[${index}].z`, 0, 20),
       capacity: Math.floor(number(node.capacity, `nodes[${index}].capacity`, 1, 100)), service: number(node.service, `nodes[${index}].service`, 0.01, 1000),
       color: /^#[0-9a-fA-F]{6}$/.test(node.color || "") ? node.color : "#40566a",
@@ -52,6 +52,18 @@ export function validateAgentTask(body = {}, limits) {
   const trigger = body.fallbackTest || null;
   if (trigger) oneOf(trigger, "fallbackTest", ["safeguard", "provider_unavailable", "token_budget_exceeded", "step_limit_exceeded"]);
   return { goal: text(body.goal, "goal", 2000), maxTokens: Math.floor(number(body.maxTokens ?? limits.maxTokens, "maxTokens", 256, limits.maxTokens)), maxSteps: Math.floor(number(body.maxSteps ?? limits.maxSteps, "maxSteps", 1, limits.maxSteps)), maxDelegations: Math.floor(number(body.maxDelegations ?? limits.maxDelegations, "maxDelegations", 1, limits.maxDelegations)), fallbackTest: trigger };
+}
+
+export function validateOptimizationInput(body = {}) {
+  return {
+    objective: oneOf(body.objective || "throughput", "objective", ["throughput", "p95Cycle", "averageCycle"]),
+    iterations: Math.floor(number(body.iterations ?? 4, "iterations", 1, 12)),
+    candidates: Math.floor(number(body.candidates ?? 2, "candidates", 1, 4)),
+    entities: Math.floor(number(body.entities ?? 24, "entities", 8, 80)),
+    seed: Math.floor(number(body.seed ?? 42, "seed", 0, 2147483647)),
+    capacityBudget: Math.floor(number(body.capacityBudget ?? 3, "capacityBudget", 0, 20)),
+    serviceBudget: number(body.serviceBudget ?? 0.6, "serviceBudget", 0, 3)
+  };
 }
 
 export function validateRobotRoutineInput(body = {}, scenarioIds = []) {

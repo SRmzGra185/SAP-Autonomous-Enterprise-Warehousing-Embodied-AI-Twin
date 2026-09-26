@@ -1,6 +1,7 @@
 import { createExceptionUI } from "./exception-ui.js";
+import { isUnitree, UNITREE_MODELS, unitreeModelKey } from "./robot-models.js";
 
-export function createExecutionUI({ api, getModel, getWorld, getScenario, run, selectScenario, inspectNode, canApprove }) {
+export function createExecutionUI({ api, getModel, getWorld, getScenario, run, selectScenario, selectNode, dragNode, inspectNode, canApprove }) {
   const $ = (id) => document.getElementById(id), put = (id, value) => { $(id).textContent = value; };
   let jobId = null, pending = null, active = null, completed = new Set(), labels = new Map(), events = [];
   const draftHost = document.createElement("div"), proofHost = document.createElement("div");
@@ -72,10 +73,10 @@ export function createExecutionUI({ api, getModel, getWorld, getScenario, run, s
       for (const projected of frame.nodes || []) {
         const node = model.nodes.find((item) => item.id === projected.id); if (!node) continue;
         existing.add(node.id); let el = labels.get(node.id);
-        if (!el) { el = document.createElement("button"); el.type = "button"; el.className = "mesh-label"; el.append(document.createElement("strong"), document.createElement("span")); el.onclick = () => { getWorld()?.focusNode?.(node.id); inspectNode?.(getModel().nodes.find(item => item.id === node.id)); }; labels.set(node.id, el); $("mesh-labels").append(el); }
-        el.children[0].textContent = node.name;
+        if (!el) { el = document.createElement("button"); el.type = "button"; el.className = "mesh-label"; el.append(document.createElement("strong"), document.createElement("span")); el.onpointerdown=event=>dragNode?.(node.id,event); el.onclick=()=>selectNode?.(node.id); el.ondblclick=()=>inspectNode?.(getModel().nodes.find(item=>item.id===node.id)); labels.set(node.id, el); $("mesh-labels").append(el); }
+        el.children[0].textContent = node.name + (isUnitree(node) ? (node.visual === "unitreeHumanoid" ? " · H1" : " · Quadruped") : "");
         el.children[1].textContent = `${completed.has(node.id) ? "✓ Done · " : active === node.id ? "● Active · " : ""}Cap ${node.capacity} · demo service ${node.service} s`;
-        el.title = `${node.name}\n${node.subtitle}\nCapacity ${node.capacity} · Service ${node.service} demo seconds${node.rackState ? "\nRack: " + node.rackState + " · SKU " + node.sku + " · EPC " + node.rfidEpc : ""}`;
+        el.title = `${node.name}\n${node.subtitle}${isUnitree(node) ? "\n"+UNITREE_MODELS[unitreeModelKey(node)].label+" · visual representation only" : ""}\nCapacity ${node.capacity} · Service ${node.service} demo seconds${node.rackState ? "\nRack: " + node.rackState + " · SKU " + node.sku + " · EPC " + node.rfidEpc : ""}`;
         el.classList.toggle("is-active", node.id === active); el.classList.toggle("is-complete", completed.has(node.id));
         el.style.transform = `translate(${projected.x}px, ${projected.y}px) translate(-50%, -100%)`; el.hidden = projected.visible === false;
       }

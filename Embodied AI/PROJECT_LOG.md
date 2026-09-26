@@ -271,3 +271,35 @@
 - Evidence: `npm test` passed: `14 platform + 7 robot objects, 8 GRAFCET steps, live route denied`.
 - Evidence: local launcher test with `-NoOpen` returned API health `ok: true`, app `SAP Embodied AI Simulation Lab`, version `0.5.0-embodied-ai`.
 - Evidence: Assisted routine reached `awaiting_approval` at `S0`, continued to `S1` only after approval, then stopped after explicit rejection. No production command was dispatched.
+
+## 2026-09-25 — Editor functionality, executive experiments and Unitree representations
+
+### Scope
+
+- Continued the authorized changes in this workspace copy. Did not recreate the newer modules the user described as context.
+- Model ribbon now offers Select, Trail and explicit capacity editing; global Undo/Redo above the tabs covers movement, links, capacity, added objects, model changes and robot representation.
+- Select uses perspective ray-to-floor dragging in WebGL and relative-grab movement in 2D. Single clicks select; double clicks open the object workspace. Browser testing caught and fixed a no-op pointerup SVG replacement that prevented reliable 2D double clicks.
+- Palette is generated from every object in every supplied use case, plus dedicated Unitree quadruped and H1 humanoid entries.
+- Toast text is explicitly white. Simulate no longer includes Select. Paced playback is labeled as playback, not physical real-time control.
+- Industrial timing experiments show executive summary cards, paired comparisons, an explicit candidate-capacity field and collapsed technical details. Candidate changes do not mutate the saved model.
+- Save requests are serialized to avoid older responses overwriting newer edits. Structural editing is locked while routine/basic DES/industrial comparison jobs are running.
+
+### Unitree implementation
+
+- Verified H1 naming against https://www.unitree.com/h1/ : H1 is humanoid; no exact quadruped hardware model is assumed.
+- Added an authored H1-inspired polygonal assembly: 117 parts, 21,552 triangles, shaped thorax and feet, white/graphite shells, joints, hands, sensor head and illustrative upper-body articulation.
+- Added representation selectors in the inspector, existing-object workspace and palette preview. Switching existing robots preserves identity, position, role, connections, capacity, service and protocols. Standalone palette names follow the selected form.
+- Server validation accepts the new visual; re-composing the same workcell preserves it. No new real-robot capability, controller or authorization is granted.
+- Kept quadruped/Joule/UR5 geometry unchanged (regression fingerprints checked). DES assumptions remain explicitly synthetic and unchanged by the visual swap.
+- Delegated only the bounded mesh/test task to a specialist; integrated and independently ran the complete suite. No new external model provider or safeguard-bypass behavior was added.
+
+### Verification evidence
+
+- All 87 unit/contract tests passed: 23 connection, 10 timing, 7 exception, 9 full-circle, 7 routine-library, 9 editor, 12 experiments UI and 10 mesh tests.
+- API smoke passed: four scoped models, new humanoid save/reload/recompose, fast/paced/Monte Carlo jobs, CORS rejection, approval binding, evidence-gated simulated resolution and live denial.
+- 101 sampled humanoid poses remain grounded at Y=0 and fit renderer bounds. Geometry, normals, rigid links, transforms and silhouette tests passed.
+- Isolated actual-browser test passed for palette placement, preview isolation, both robot selectors, persistence, 2D double-click menus, 3D drag, capacity, Trail, Undo/Redo, white toasts, all Simulate buttons and paired executive experiments. No page exceptions were captured.
+- Browser automation in the in-app control tool failed to initialize in this continuation (kernel asset path missing). Used an isolated local Playwright/Edge regression instead, on port 4301, without editing the user's 4173 tenant.
+- Captures inspected: `test-evidence/unitree-humanoid.png`, `unitree-quadruped.png`, `timing-executive-summary.png`.
+- Added `EDITOR_GUIDE.md`, including the distinction between representation and physical control, synthetic timing, Trails versus GRAFCET, candidate versus model capacity, and session-only persistence.
+- Restarted only the server process launched for this work, restored the captured 16-object local model, and verified port 4173 health plus the served selector/mesh source. Requested the app panel to open the local URL.

@@ -7,6 +7,32 @@ const RACK_STATES = ['available', 'empty', 'blocked', 'replenishment_delayed'];
 // Mirrors the main-owned routine-context.mjs; parity is covered by tests.
 const DEFAULT_CONTEXT = { sku: 'DEMO-PUMP-KIT', rfidEpc: '3034257BF400B78000000001', quantity: 4, destination: 'DEMO-RECEIVING-01', rackState: 'available' };
 const BAT = '@echo off\r\nsetlocal DisableDelayedExpansion\r\nnode "%~dp0scripts\\run-routine.mjs" "%~dp0routine.recipe.json"\r\nexit /b %errorlevel%\r\n';
+const CASE_KEYS = ['sku', 'rfidEpc', 'quantity', 'destination', 'rackState'];
+// Prompt library: curated goals per scenario. Fields are applied to the explicit inputs; the goal stays text.
+const PROMPTS = {
+  'autonomous-inspection': [
+    { label: 'Pump inspection', goal: 'Inspect pump DEMO-PUMP-KIT with the Unitree robot, classify its condition from the simulated sensors and record the evidence; if an anomaly is detected, propose the corresponding maintenance order.', fields: { sku: 'DEMO-PUMP-KIT' } },
+    { label: 'Assisted route', goal: 'Walk the inspection route in assisted mode and pause before every physical action so an operator approves it in the app.', fields: { mode: 'assisted' } },
+    { label: 'Simulate 4 assets', goal: 'Simulate the inspection of 4 assets with no live commands and summarize the safety risks and which evidence gets recorded.', fields: { mode: 'simulation', quantity: 4 } }
+  ],
+  'adaptive-assembly': [
+    { label: 'Variant assembly', goal: 'Assemble the DEMO-PUMP-KIT variant with the UR5, inspect the result and route rejected parts to review.', fields: { sku: 'DEMO-PUMP-KIT' } },
+    { label: 'Simulated cycle', goal: 'Prepare one adaptive assembly cycle in simulation and explain which sensors validate each step before moving to the next.', fields: { mode: 'simulation' } }
+  ],
+  'autonomous-orchestration': [
+    { label: 'Full circle', goal: 'Orchestrate the full circle inspection → maintenance → production → RFID packing → delivery for 4 units to DEMO-RECEIVING-01, with human approval at every handover.', fields: { quantity: 4, destination: 'DEMO-RECEIVING-01', mode: 'assisted' } },
+    { label: 'Technician via Joule Work', goal: 'After the inspection, assign a technician via Joule Work (simulated), align executive demand with the assembly line and explain which approvals each step requires.' }
+  ],
+  'warehouse-fulfillment': [
+    { label: 'Fulfill order', goal: 'Fulfill 4 units of SKU DEMO-PUMP-KIT with EPC 3034257BF400B78000000001 to destination DEMO-RECEIVING-01, verify quantity and destination and record the evidence.', fields: { sku: 'DEMO-PUMP-KIT', rfidEpc: '3034257BF400B78000000001', quantity: 4, destination: 'DEMO-RECEIVING-01' } },
+    { label: 'Blocked rack', goal: 'The rack is blocked: reserve an alternative tote and explain how to resolve the exception before moving any material.', fields: { rackState: 'blocked' } },
+    { label: 'Order in simulation', goal: 'Prepare the order in simulation mode and tell me which evidence gets recorded and what assisted mode would do differently.', fields: { mode: 'simulation' } }
+  ],
+  '*': [
+    { label: 'Risks & approvals', goal: 'Which safety risks does this routine carry and which human approvals are required before each physical action?' },
+    { label: 'Explain step by step', goal: 'Explain step by step what the robot will do, which sensors it uses and which data is recorded as evidence for SAP.' }
+  ]
+};
 const mounts = new WeakMap();
 function node(tag, text, className) {
   const item = document.createElement(tag);
@@ -55,23 +81,26 @@ function recipeRecord(value) {
  * Optional runRecipe(workflow) is called ONLY by the preview's explicit queue button;
  * main owns queuing/approval UI. Without it, this panel only plans and exports.
  * POST result and GET record contract: see src/routine-library.mjs header.
+ * Optional activeLabel names the "use active scenario" button (default: workspace wording).
  * Returns {refreshSelection,destroy}. Call destroy on tenant/session change to erase
  * history and close streams. No conversation history is submitted to the server.
  */
-export function initJouleChat({ api, getScenario, runRecipe }) {
+export function initJouleChat({ api, getScenario, runRecipe, activeLabel }) {
   const root = document.querySelector('#joule-chat');
   if (!root) return null;
   if (typeof api !== 'function' || typeof getScenario !== 'function') throw new TypeError('api and getScenario are required.');
   mounts.get(root)?.destroy();
-  let disposed = false, busy = false, overridden = false, currentRecord = null, source = null, stopWatch = null;
+  let disposed = false, busy = false, overridden = false, connected = false, currentRecord = null, source = null, stopWatch = null;
   const history = [], controllers = new Set(), downloadUrls = new Set(), timers = new Set();
   root.classList.add('joule-chat');
   const header = node('div', undefined, 'joule-heading');
-  header.append(node('h2', 'Joule-like local planner'), node('span', 'NOT_CONNECTED', 'joule-badge'));
+  const title = node('h2', 'Joule-like local planner'), badge = node('span', 'NOT_CONNECTED', 'joule-badge');
+  header.append(title, badge);
   const note = node('p', 'Deterministic placeholder · no Joule API or remote LLM. Do not enter credentials. Goals are text; only explicit fields configure the four predefined routines. Blank case fields use the displayed DEMO defaults.');
   const messages = node('div', undefined, 'joule-messages'); messages.setAttribute('role', 'log'); messages.setAttribute('aria-live', 'polite');
+  const suggestions = node('div', undefined, 'joule-suggestions'); suggestions.hidden = true;
   const status = node('p', 'Ready to plan. Nothing has run.', 'joule-status'); status.setAttribute('role', 'status');
-  const form = node('form');
+  const form = node('form'); form.noValidate = true; // our own messages instead of the browser's 'Please fill out this field'
   const fields = node('div', undefined, 'joule-fields');
   const inputs = {};
   function field(name, label, options) {
@@ -82,8 +111,8 @@ export function initJouleChat({ api, getScenario, runRecipe }) {
     wrapper.append(control); fields.append(wrapper); return control;
   }
   const scenario = field('scenarioId', 'Scenario', SCENARIOS); scenario.required = true;
-  scenario.addEventListener('change', () => { overridden = true; });
-  const active = button('Use active workspace scenario', () => { overridden = false; refreshSelection(); });
+  scenario.addEventListener('change', () => { overridden = true; renderPrompts(); });
+  const active = button(activeLabel || 'Use active workspace scenario', () => { overridden = false; refreshSelection(); });
   field('mode', 'Replay mode', [['assisted', 'Assisted · approve in app'], ['simulation', 'Simulation only']]);
   field('sku', 'SKU (optional)'); field('rfidEpc', 'RFID EPC · hex (optional)');
   const quantity = field('quantity', 'Quantity (optional)'); quantity.type = 'number'; quantity.min = '1'; quantity.max = '10000'; quantity.step = '1';
@@ -93,10 +122,41 @@ export function initJouleChat({ api, getScenario, runRecipe }) {
   const goal = node('textarea'); goal.name = 'goal'; goal.maxLength = 2000; goal.required = true; goal.rows = 3;
   goal.placeholder = 'Describe your goal. Choose the scenario and case fields above.'; goalLabel.append(goal);
   const ask = node('button', 'Ask local planner'); ask.type = 'submit';
+  // With Joule connected, the deterministic planner stays one click away: same recipe, no model call.
+  let forceLocal = false;
+  const askLocal = button('Ask local planner', () => { if (busy) return; forceLocal = true; form.requestSubmit(ask); }); askLocal.hidden = true; askLocal.className = 'joule-ask-local';
   const preview = button('Preview recipe', () => { void openPreview(); }); preview.disabled = true;
-  const clear = button('Clear conversation', () => { history.length = 0; messages.replaceChildren(); currentRecord = null; preview.disabled = true; });
-  const actions = node('div', undefined, 'joule-actions'); actions.append(ask, preview, clear);
-  form.append(fields, active, goalLabel, actions);
+  const clear = button('Clear conversation', () => { history.length = 0; messages.replaceChildren(); currentRecord = null; preview.disabled = true; suggestions.hidden = true; suggestions.replaceChildren(); });
+  const actions = node('div', undefined, 'joule-actions'); actions.append(ask, askLocal, preview, clear);
+  const promptBar = node('div', undefined, 'joule-prompts');
+  function applyFields(values) {
+    if (!values) return;
+    if (values.scenarioId && SCENARIOS.some(([id]) => id === values.scenarioId)) { scenario.value = values.scenarioId; overridden = true; }
+    if (values.mode) inputs.mode.value = values.mode;
+    for (const key of CASE_KEYS) if (values[key] !== undefined) inputs[key].value = String(values[key]);
+    renderPrompts();
+  }
+  function renderPrompts() {
+    const items = [...(PROMPTS[scenario.value] || []), ...PROMPTS['*']];
+    promptBar.replaceChildren(node('span', 'PROMPT LIBRARY', 'joule-prompts-label'), ...items.map(prompt => {
+      const chip = button(prompt.label, () => { if (busy) return; goal.value = prompt.goal; applyFields(prompt.fields); goal.focus(); status.textContent = connected ? 'Prompt loaded. Ask Joule to plan it.' : 'Prompt loaded. Ask the local planner to plan it.'; });
+      chip.className = 'joule-chip'; chip.title = prompt.goal; return chip;
+    }));
+  }
+  function renderSuggestions(values) {
+    suggestions.replaceChildren(); suggestions.hidden = true;
+    if (!values) return;
+    const changes = Object.entries(values).filter(([key, value]) => String(key === 'scenarioId' ? scenario.value : inputs[key]?.value ?? '') !== String(value));
+    if (!changes.length) return;
+    const listEl = node('ul');
+    for (const [key, value] of changes) listEl.append(node('li', `${key} → ${value}`));
+    const apply = button('Apply suggestions', () => { applyFields(values); suggestions.hidden = true; status.textContent = 'Fields updated from Joule. Ask again to rebuild the recipe with them.'; });
+    const ignore = button('Ignore', () => { suggestions.hidden = true; });
+    const row = node('div', undefined, 'joule-actions'); row.append(apply, ignore);
+    suggestions.append(node('strong', 'Joule suggests these explicit fields from your goal:'), listEl, row);
+    suggestions.hidden = false;
+  }
+  form.append(fields, active, promptBar, goalLabel, actions);
   const modal = node('dialog', undefined, 'joule-recipe-dialog');
   modal.setAttribute('aria-label', 'Local routine recipe preview');
   const modalStatus = node('p'); modalStatus.setAttribute('role', 'status');
@@ -107,12 +167,23 @@ export function initJouleChat({ api, getScenario, runRecipe }) {
   const modalActions = node('div', undefined, 'joule-actions'); modalActions.append(exportButton, runButton, close);
   modal.append(node('h3', 'Reusable local recipe'), modalStatus, recipeText,
     node('p', 'Copy run-routine.bat and routine.recipe.json to the project root; keep scripts/ and src/. Start the app, then manually run the BAT. Your browser may ask to allow two downloads. Nothing is executed by export.'), modalActions);
-  root.replaceChildren(header, note, messages, form, status, modal);
+  root.replaceChildren(header, note, messages, suggestions, form, status, modal);
+  async function loadDescriptor() {
+    try {
+      const descriptor = await call('/api/joule/descriptor');
+      if (disposed || !descriptor || descriptor.status !== 'CONNECTED' || typeof descriptor.model !== 'string') return;
+      connected = true;
+      title.textContent = 'Joule'; badge.textContent = 'CONNECTED'; badge.classList.add('connected');
+      note.textContent = `Your goal is interpreted in natural language; only the explicit fields configure the four predefined routines, and Joule can only suggest values for them. Nothing executes from this chat; assisted replay still requires approval in the app. Do not enter credentials.`;
+      ask.textContent = 'Ask Joule'; askLocal.hidden = false; renderPrompts();
+    } catch { /* stays NOT_CONNECTED */ }
+  }
   function refreshSelection() {
     if (disposed || overridden) return;
     const selected = getScenario(); const id = typeof selected === 'string' ? selected : selected?.id;
     scenario.value = SCENARIOS.some(([value]) => value === id) ? id : '';
     if (!scenario.value) status.textContent = 'Choose one of the four scenarios; no active selection is available.';
+    renderPrompts();
   }
   function addMessage(role, text) {
     history.push({ role, text }); if (history.length > 20) history.shift();
@@ -136,7 +207,7 @@ export function initJouleChat({ api, getScenario, runRecipe }) {
     return new Promise((resolve, reject) => {
       source = new EventSource(job.events);
       const stream = source; let ended = false;
-      const timer = setTimeout(() => finish(new Error('Planner timed out.')), 45000); timers.add(timer);
+      const timer = setTimeout(() => finish(new Error('Planner timed out.')), 120000); timers.add(timer);
       function finish(error, result) {
         if (ended) return; ended = true; stream.close(); source = null; stopWatch = null;
         clearTimeout(timer); timers.delete(timer); error ? reject(error) : resolve(result);
@@ -151,7 +222,7 @@ export function initJouleChat({ api, getScenario, runRecipe }) {
             if (payload.id !== job.jobId || payload.type !== type) throw new Error('Invalid event.');
             if (type === 'job_complete') finish(null, payload.result);
             else if (type === 'job_failed' || type === 'job_cancelled') finish(new Error('Planner stopped.'));
-            else status.textContent = 'Local planner is preparing the predefined workflow…';
+            else status.textContent = payload.stage === 'aicore' ? 'Joule is reasoning…' : 'Local planner is preparing the predefined workflow…';
           } catch { finish(new Error('Invalid planner event.')); }
         });
       }
@@ -159,8 +230,13 @@ export function initJouleChat({ api, getScenario, runRecipe }) {
     });
   }
   form.addEventListener('submit', async event => {
-    event.preventDefault(); if (busy || disposed) return;
+    event.preventDefault(); const useLocal = forceLocal; forceLocal = false; if (busy || disposed) return;
     refreshSelection();
+    if (!goal.value.trim()) {
+      if (connected && !useLocal) { status.textContent = 'Write the result you want, or pick a prompt from the library. Ask local planner works without a goal.'; goal.focus?.(); return; }
+      const name = (SCENARIOS.find(([id]) => id === scenario.value)?.[1] || 'selected').toLowerCase();
+      goal.value = `Prepare the ${name} routine with the fields above.`;
+    }
     try {
       const context = {};
       for (const key of ['sku', 'rfidEpc', 'quantity', 'destination', 'rackState']) {
@@ -170,18 +246,29 @@ export function initJouleChat({ api, getScenario, runRecipe }) {
       if (!goal.value.trim() || goal.value.length > 2000
         || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(goal.value)
         || /(?:bearer\s+\S+|(?:password|passwd|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*\S+|https?:\/\/[^\s/]*@)/i.test(goal.value)) throw new Error('Invalid goal.');
-      const request = { goal: goal.value, scenarioId: wanted.scenarioId, mode: wanted.mode, caseContext: wanted.caseContext };
-      currentRecord = null; lock(true); addMessage('You', request.goal); status.textContent = 'Submitting local planning job…';
+      const request = { goal: goal.value, scenarioId: wanted.scenarioId, mode: wanted.mode, caseContext: wanted.caseContext, ...(connected && useLocal ? { assistant: 'local' } : {}) };
+      currentRecord = null; lock(true); addMessage('You', request.goal); suggestions.hidden = true;
+      status.textContent = connected && !useLocal ? 'Submitting to Joule…' : 'Submitting local planning job…';
       const job = await call('/api/joule/chat', { method: 'POST', body: JSON.stringify(request) });
       if (disposed) return;
       const result = await watch(job);
       if (disposed) return;
       const record = recipeRecord(result?.recipe);
       if (typeof result.answer !== 'string' || result.answer.length > 4000 || result.plan?.source !== 'local_deterministic'
-        || result.plan.connected !== false || result.plan.executed !== false
+        || typeof result.plan.connected !== 'boolean' || result.plan.executed !== false
         || JSON.stringify(record.recipe) !== JSON.stringify(wanted)) throw new Error('Invalid planner result.');
-      currentRecord = record; addMessage('Local planner', result.answer);
-      status.textContent = 'Plan ready · NOT_CONNECTED · nothing executed. Preview to inspect or export.';
+      currentRecord = record;
+      root.dispatchEvent?.(new CustomEvent('joule:recipe', { bubbles: true, detail: { id: record.id } })); // lets a recipe library refresh
+      const joule = result.joule && typeof result.joule === 'object' ? result.joule : null;
+      addMessage(joule ? 'Joule' : 'Local planner', result.answer);
+      for (const risk of Array.isArray(joule?.risks) ? joule.risks.slice(0, 3) : []) if (typeof risk === 'string') addMessage('Joule · risk', risk.slice(0, 300));
+      for (const next of Array.isArray(joule?.nextActions) ? joule.nextActions.slice(0, 3) : []) if (typeof next === 'string') addMessage('Joule · next', next.slice(0, 300));
+      renderSuggestions(joule?.fieldSuggestions && typeof joule.fieldSuggestions === 'object' ? joule.fieldSuggestions : null);
+      status.textContent = joule && result.jouleReused
+        ? 'Plan ready · Joule answer reused (no new Joule call) · nothing executed. Preview to inspect or export.'
+        : joule
+        ? 'Plan ready · Joule · recipe stays deterministic · nothing executed. Preview to inspect or export.'
+        : connected ? 'Plan ready · local planner (Joule not called) · nothing executed. Preview to inspect or export.' : 'Plan ready · NOT_CONNECTED · nothing executed. Preview to inspect or export.';
     } catch {
       if (!disposed) { currentRecord = null; status.textContent = 'Planning unavailable or input rejected. Check the listed fields and retry. No routine was executed by this panel.'; }
     } finally { if (!disposed) lock(false); }
@@ -214,10 +301,13 @@ export function initJouleChat({ api, getScenario, runRecipe }) {
     if (disposed || busy || runButton.disabled || typeof runRecipe !== 'function' || !currentRecord) return;
     const recipe = validateClientRecipe(currentRecord.recipe); lock(true); runButton.disabled = true;
     try {
-      await runRecipe({ scenarioId: recipe.scenarioId, mode: recipe.mode, cycles: 1, speed: 1, caseContext: recipe.caseContext });
+      await runRecipe({ recipeId: currentRecord.id, scenarioId: recipe.scenarioId, mode: recipe.mode, cycles: 1, speed: 1, caseContext: recipe.caseContext });
       if (!disposed && modal.open) modal.close();
       if (!disposed) modalStatus.textContent = 'Handed to the local app. Review progress and assisted approvals there; completion is not assumed.';
-    } catch { if (!disposed) modalStatus.textContent = 'Could not confirm queuing. Check app progress before retrying.'; }
+      if (!disposed) status.textContent = recipe.mode === 'assisted'
+        ? 'Routine queued in assisted mode · it pauses before each step: approve it in the approval panel (Workcell). Simulation mode runs without pauses.'
+        : 'Routine queued in simulation · follow it in the Workcell; nothing is written to SAP or robots.';
+    } catch (error) { if (!disposed) { modalStatus.textContent = `Could not queue: ${String(error?.message || 'check app progress before retrying').slice(0, 160)}`; status.textContent = modalStatus.textContent; } }
     finally { if (!disposed) lock(false); }
   }
   const controller = { refreshSelection, destroy() {
@@ -228,5 +318,5 @@ export function initJouleChat({ api, getScenario, runRecipe }) {
     controllers.clear(); timers.clear(); downloadUrls.clear(); history.length = 0; currentRecord = null;
     if (modal.open) modal.close(); root.replaceChildren(); mounts.delete(root);
   } };
-  mounts.set(root, controller); refreshSelection(); return controller;
+  mounts.set(root, controller); refreshSelection(); void loadDescriptor(); return controller;
 }

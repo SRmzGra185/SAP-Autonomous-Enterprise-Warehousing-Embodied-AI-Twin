@@ -66,6 +66,25 @@ try {
     assert.ok(Object.hasOwn(result.utilization, scenario.grafcet.steps[0].nodeId));
   }
 
+  for(const mode of ["realtime","monte-carlo"]) {
+    const queued=await request("/api/simulations",{mode,entities:1,runs:3,seed:42});
+    assert.equal(queued.status,202);const simulation=(await completed(queued.body.jobId)).result;
+    assert.equal(simulation.completed,1);assert.equal(simulation.mode,mode);assert.equal(simulation.runs,mode==="monte-carlo"?3:1);
+  }
+  const beforeEdit=(await request("/api/model")).body, edited=structuredClone(beforeEdit);
+  edited.nodes[0].capacity=4;edited.nodes[0].x+=50;
+  const saved=await request("/api/model",edited);assert.equal(saved.status,202);
+  assert.equal((await request("/api/model")).body.nodes[0].capacity,4);
+  assert.equal((await request("/api/model",beforeEdit)).status,202);
+  const withHumanoid=structuredClone(beforeEdit), unitree=withHumanoid.nodes.find(n=>n.visual==="unitree");
+  assert.ok(unitree);unitree.visual="unitreeHumanoid";
+  assert.equal((await request("/api/model",withHumanoid)).status,202);
+  const reloaded=(await request("/api/model")).body;
+  assert.equal(reloaded.nodes.find(n=>n.id===unitree.id).visual,"unitreeHumanoid");
+  assert.deepEqual(reloaded.executionRoute,beforeEdit.executionRoute);
+  const recomposed=await request(`/api/robot-scenarios/${withHumanoid.activeScenarioId}/compose`,{});
+  assert.equal(recomposed.body.model.nodes.find(n=>n.id===unitree.id).visual,"unitreeHumanoid");
+  assert.equal((await request("/api/model",beforeEdit)).status,202);
   const profiles = await request("/api/sap-connections");
   assert.equal(profiles.status, 200);
   assert.equal((await request("/api/sap-connections", { role: "ERP", kind: "abap", environment: "" }, "PUT")).status, 400);

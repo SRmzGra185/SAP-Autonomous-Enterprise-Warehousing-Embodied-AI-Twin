@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en" data-theme="white">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#ffffff" />
+    <title>Joule Analytics · Embodied AI Twin</title>
+    <link rel="stylesheet" href="/analytics.css" />
+    <script src="/vendor/echarts.min.js" defer></script>
+    <script src="/analytics.js" defer></script>
+    <script type="module" src="/analytics-planner.js"></script>
+    <script type="module" src="/analytics-recipes.js"></script>
+    <link rel="stylesheet" href="/joule-chat.css" />
+  </head>
+  <body>
+
+    <header class="topbar">
+      <div class="brand"><a class="back" href="/">← Back to twin</a><span class="brand-sep"></span><img class="sap-logo" src="/sap-logo.svg" alt="SAP" width="69" height="34" /><i class="joule-icon brand-mark" role="img" aria-label="Joule"></i><div><strong>Joule Analytics</strong><span>Embodied AI · Autonomous Operations Twin · SAP BDC Connect</span></div></div>
+      <div class="top-tools">
+        <span class="tag ai" id="jouleTag">Joule</span>
+        <button id="refresh" class="btn">Refresh</button>
+      </div>
+    </header>
+
+    <div class="sub-bar"><span id="mainSub">Loading the most recent run…</span><span class="muted" id="genAt"></span></div>
+
+    <div id="empty" class="panel" hidden>
+      <div class="sec"><span class="badge">1</span><span class="name">Joule Analytics</span></div>
+      <div class="ph"><h2>No run yet</h2></div>
+      <p>You haven't run anything for this tenant yet. Go to the <a href="/">twin</a>, run an experiment or a routine — this dashboard opens itself when it completes.</p>
+    </div>
+
+    <div class="layout" id="layout" hidden>
+      <div class="main">
+        <section class="hero" id="hero">
+          <div class="gauge-main">
+            <div class="sec"><span class="badge">1</span><span class="name" id="gaugeLabel">Mean utilization</span></div>
+            <div class="g-t" id="gaugeTitle">Fleet load</div>
+            <div id="gaugeMain" class="g-chart"></div>
+            <div class="g-foot"><span id="gaugeFootL"></span><span id="gaugeFootR"></span></div>
+          </div>
+          <div class="tachos" id="tachos"></div>
+        </section>
+
+        <div class="kpis" id="kpis"></div>
+
+        <section class="panel" id="pUtil">
+          <div class="sec"><span class="badge">2</span><span class="name">Resources</span></div>
+          <div class="ph"><h2>Resource utilization by node</h2><div class="sub" id="utilSub"></div></div>
+          <div id="utilization" class="chart tall"></div>
+        </section>
+
+        <section class="panel" id="pTable">
+          <div class="sec"><span class="badge">3</span><span class="name">Detail</span></div>
+          <div class="ph"><h2>Node detail</h2><div class="sub">This run · seconds · replication means</div></div>
+          <div class="table-wrap"><table id="detail"><thead><tr><th>Node</th><th>Kind</th><th class="num">Capacity</th><th class="num">Utilization</th><th class="num">Queued s</th><th class="num">Busy s</th></tr></thead><tbody></tbody></table></div>
+        </section>
+      </div>
+
+      <aside class="side">
+        <section class="panel ai" id="pJoule">
+          <div class="sec"><span class="badge">4</span><span class="name">Joule</span></div>
+          <div class="ph"><h2 class="joule-title"><i class="joule-icon" aria-hidden="true"></i>Joule</h2><div class="sub" id="jouleSub">Executive summary · recommendations · risks</div></div>
+          <div id="jouleSummary" class="joule-summary">Waiting for the run…</div>
+          <h3>Recommendations</h3>
+          <div id="jouleRecs" class="joule-recs"></div>
+          <h3>Risks</h3>
+          <ul id="jouleRisks" class="joule-risks"></ul>
+          <p class="foot" id="jouleFoot"></p>
+          <a class="plan-link" href="#joule-planner"><i class="joule-icon" aria-hidden="true"></i>Plan the next routine with Joule ↓</a>
+        </section>
+      </aside>
+    </div>
+
+    <section class="panel planner-panel" id="joule-planner" aria-label="Joule routine planner and reusable recipes">
+      <div class="sec"><span class="badge">5</span><span class="name">Joule · plan &amp; reusable recipes</span></div>
+      <p class="planner-intro">Plan a routine with Joule, then keep it as a recipe: <strong>Preview recipe</strong> validates it and <strong>Download BAT + recipe JSON</strong> exports it, so the same workflow replays between steps without asking Joule again. Every recipe lands in the library below; asking the same thing twice reuses Joule's answer instead of calling it again.</p>
+      <div id="joule-chat"></div>
+    </section>
+
+    <section class="panel library-panel" id="recipe-library" aria-label="Recipe library and Joule optimization">
+      <div class="sec"><span class="badge">6</span><span class="name">Recipe library · Joule optimization</span></div>
+      <div class="ph"><h2>Reusable recipes</h2><div class="sub" id="libSub">Loading…</div></div>
+      <div class="lib-tools">
+        <button class="btn" id="libInsights" type="button"><i class="joule-icon" aria-hidden="true"></i>Find patterns with Joule</button>
+        <label class="btn ghost" for="libImport">Import recipe JSON</label><input type="file" id="libImport" accept=".json,application/json" hidden />
+        <button class="btn ghost" id="libRefresh" type="button">Refresh</button>
+      </div>
+      <div class="lib-usage" id="libUsage"></div>
+      <div class="lib-insights" id="libInsightsBox" hidden></div>
+      <div class="table-wrap"><table id="libTable" hidden><thead><tr><th>Recipe</th><th>Mode</th><th class="num">Units</th><th class="num">Uses</th><th class="num">Runs</th><th class="num">Best units/h</th><th>Last run</th><th></th></tr></thead><tbody></tbody></table></div>
+      <p class="lib-empty" id="libEmpty" hidden>No recipes yet. Plan a routine above, or import a routine.recipe.json you saved before.</p>
+      <p class="foot" id="libFoot">Ranking and best option are computed locally. Joule is only asked for patterns, and the same library is never analysed twice.</p>
+    </section>
+
+    <footer><span>INTERNAL – SAP and Partners Only</span><span id="footSrc">Source: SAP Autonomous Operations Twin · DES engine · your most recent run · Intelligence: Joule</span><span>Simulated data for demonstration purposes</span></footer>
+    <div id="error" class="error" hidden></div>
+  </body>
+</html>
