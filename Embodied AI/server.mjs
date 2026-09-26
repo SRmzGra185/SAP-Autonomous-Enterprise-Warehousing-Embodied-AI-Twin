@@ -490,10 +490,10 @@ async function routeRequest(req, res) {
       if (req.method === "POST" && action === "dispatch") {
         if (!canEdit(principal)) throw new HttpError(403, "Editor or administrator role required.", "role_denied");
         if (humanoidBusy()) throw new HttpError(409, "Stop or finish the active robot job before starting another.", "routine_busy");
-        if (order.status !== "open") throw new HttpError(409, `Task ${order.id} is ${order.status.replace("_", " ")}; reset the demo tasks to run it again.`, "order_closed");
+        if (order.status !== "open") throw new HttpError(409, `Task ${order.id} is ${order.status.replace("_", " ")}; press SAP EWM task for new tasks.`, "order_closed");
         if (!isaac.connected()) throw new HttpError(409, "Connect the Isaac Sim executor and deploy a robot: the task needs the warehouse map and the robot camera.", "isaac_offline");
         const places = isaac.mapPlaces(), place = places.find((p) => p.id === order.placeId) || places.find((p) => p.name.toLowerCase() === order.storageBin.toLowerCase());
-        if (!place) throw new HttpError(409, `${order.storageBin} is not on the current warehouse map. Reset the demo tasks to use this warehouse's racks.`, "bin_not_on_map");
+        if (!place) throw new HttpError(409, `${order.storageBin} is not on the current warehouse map. Press SAP EWM task for tasks on this warehouse's racks.`, "bin_not_on_map");
         order.placeId = place.id;
         let steps;
         try { steps = validatePlan(missionFor(order), places, isaac.executorState()?.robot || "h1"); } catch (error) { throw new HttpError(409, error.message, "validation_error"); }

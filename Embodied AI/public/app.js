@@ -849,7 +849,7 @@ async function h1DecideOrder(decision) {
 }
 
 async function h1ResetOrders() {
-  try { h1.orders = (await api("/api/humanoid/orders/reset", { method: "POST", body: "{}" })).orders; h1.orderSel = null; h1.evidence = {}; h1RenderOrders(); showToast("New demo tasks on the racks of this warehouse."); }
+  try { h1.orders = (await api("/api/humanoid/orders/reset", { method: "POST", body: "{}" })).orders; h1.orderSel = null; h1.evidence = {}; h1RenderOrders(); showToast("New SAP EWM tasks on the racks of this warehouse."); }
   catch (error) { showToast(error.message); }
 }
 
